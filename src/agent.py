@@ -105,7 +105,7 @@ class Agent:
 
             # ---- 终止类动作：代码终审 ----
             if action["action"] in TERMINAL_ACTIONS:
-                verdict = self._judge(action, ask_user_rounds)
+                verdict = self._judge(action, ask_user_rounds, observations)
                 if verdict["final"]:
                     self.trace.observe(verdict["observation"])
                     return self._finish(
@@ -132,6 +132,7 @@ class Agent:
                     action["args"].get("answer_text", ""),
                     action["args"].get("citations"),
                     self.tools.store,
+                    hint=self._latest_hint(observations),
                 )
                 observation = (
                     obs_ok("citation_check", result, "引用校验通过", None)
@@ -156,12 +157,27 @@ class Agent:
 
     # ---------------------------------------------------------------- 终审
 
-    def _judge(self, action: dict, ask_user_rounds: int) -> dict:
+    @staticmethod
+    def _latest_hint(observations: list[dict]) -> dict | None:
+        """最近一次检索给出的冲突线索（没有就返回 None）。"""
+        for observation in reversed(observations):
+            if observation.get("tool") == "search_docs" and observation.get("ok"):
+                hint = (observation.get("hints") or {}).get("conflict_hint")
+                if hint:
+                    return hint
+        return None
+
+    def _judge(self, action: dict, ask_user_rounds: int, observations: list[dict]) -> dict:
         name = action["action"]
         args = action["args"]
 
         if name == "answer":
-            result = verify_answer(args.get("answer_text", ""), args.get("citations"), self.tools.store)
+            result = verify_answer(
+                args.get("answer_text", ""),
+                args.get("citations"),
+                self.tools.store,
+                hint=self._latest_hint(observations),
+            )
             if result["ok"]:
                 return {
                     "final": True,

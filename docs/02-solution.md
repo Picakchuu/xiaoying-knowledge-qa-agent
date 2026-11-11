@@ -66,6 +66,11 @@ JSON 结果 + Markdown 渲染 + trace.jsonl（动作/参数/返回摘要/后续�
 | quote 存在性 | 凭记忆改写的"原文" | `citation_not_found` / `unknown_citation` |
 | 数值 grounding | 引 D01 却说 15 天 | `missing_number_grounding` |
 | 未处理冲突 | 同时引了两份互斥来源，却只答一个值 | `unhandled_conflict` |
+| 悄悄挑一个（弱模型常见） | 检索线索显示 15 天 vs 30 天，回答只写 15 天且不提适用范围 | `cherry_picked_conflict` |
+
+最后一条是看了真实退化样本后补的：弱模型会挑"两份都写 15 天"的来源，引用集合内部自洽，
+`unhandled_conflict` 抓不到——但上一轮检索的 `conflict_hint` 说库里还有 30 天。
+带适用范围词（总部/分支机构/仅适用…）的条件化回答会被放行，避免误杀。
 
 归一化只做**字面层**（NFKC、去空白标点、中文数字→阿拉伯、单位别名 天/日），不做语义判断。所以校验器不会误杀同义改写，但也拦不住"语义上不支持的引用"——这条边界写在 `docs/03-evaluation.md`。
 

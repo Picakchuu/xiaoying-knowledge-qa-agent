@@ -157,3 +157,67 @@ def test_format_errors_is_model_readable(store: DocStore) -> None:
     )
     text = format_errors(result)
     assert "[missing_number_grounding]" in text
+
+
+# ---------------------------------------------------------------- 弱模型退化：挑了自洽的一份就答
+
+HINT = {
+    "unit": "天",
+    "values": ["15", "30"],
+    "candidates": [
+        {"doc_id": "D01", "chunk_id": "D01#c2", "value": "30"},
+        {"doc_id": "D02", "chunk_id": "D02#c2", "value": "15"},
+    ],
+}
+
+
+def test_cherry_picked_conflict_is_rejected(store: DocStore) -> None:
+    """只引自洽的一份（两份都写 15 天）就下结论 —— 检索线索说明还有 30 天。"""
+    result = verify_answer(
+        "两份细则一致，报销期限为 15 天。",
+        [
+            {"doc_id": "D02", "chunk_id": "D02#c2", "quote": D02_QUOTE},
+            {"doc_id": "D02b", "chunk_id": "D02b#c2", "quote": "费用发生后 15 天内提交报销单，逾期提交需经财务经理批准。"},
+        ],
+        store,
+        hint=HINT,
+    )
+    assert result["ok"] is False
+    codes = {error["code"] for error in result["errors"]}
+    assert "cherry_picked_conflict" in codes
+    assert any(error.get("missing") == ["30"] for error in result["errors"])
+
+
+def test_scope_limited_answer_is_exempt(store: DocStore) -> None:
+    result = verify_answer(
+        "总部员工按 15 天提交报销单。",
+        [{"doc_id": "D02b", "chunk_id": "D02b#c2", "quote": "费用发生后 15 天内提交报销单，逾期提交需经财务经理批准。"}],
+        store,
+        hint=HINT,
+    )
+    assert result["ok"] is True, result["errors"]
+
+
+def test_answer_listing_both_values_passes(store: DocStore) -> None:
+    # 注意：回答里不能写 doc_id —— 编号里的数字会被当成"没有出处的数字"
+    result = verify_answer(
+        "差旅制度要求 30 天，费用细则要求 15 天，两者不一致。",
+        [
+            {"doc_id": "D01", "chunk_id": "D01#c2", "quote": D01_QUOTE},
+            {"doc_id": "D02", "chunk_id": "D02#c2", "quote": D02_QUOTE},
+        ],
+        store,
+        hint=HINT,
+    )
+    assert result["ok"] is True, result["errors"]
+
+
+def test_hint_of_other_unit_does_not_block_money_answer(store: DocStore) -> None:
+    """问的是金额、线索是期限：不该误伤。"""
+    result = verify_answer(
+        "出差期间市内交通费单日不超过 200 元。",
+        [{"doc_id": "D02", "chunk_id": "D02#c4", "quote": "出差期间的市内交通费按实际发生额报销，单日合计不超过 200 元。"}],
+        store,
+        hint=HINT,
+    )
+    assert result["ok"] is True, result["errors"]

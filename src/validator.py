@@ -34,6 +34,23 @@ ERROR_CODES = (
     "citation_not_found",
     "missing_number_grounding",
     "unhandled_conflict",
+    "cherry_picked_conflict",
+)
+
+# 带这些词说明回答是条件化/范围限定的，可以只提一个值（例如「总部员工按 15 天」）
+SCOPE_MARKERS = (
+    "总部",
+    "分支机构",
+    "分公司",
+    "区域",
+    "仅适用",
+    "全公司",
+    "全员",
+    "各分部",
+    "北京",
+    "上海",
+    "差旅",
+    "非差旅",
 )
 
 
@@ -146,11 +163,47 @@ def check_conflict_handling(answer_text: str, verified: list[tuple[Any, str]]) -
     return errors
 
 
+def check_hint_coverage(answer_text: str, hint: dict | None) -> list[dict]:
+    """检索线索说"这里有冲突"，但回答只提了一个值、又没说适用范围 -> 打回。
+
+    这条是给「弱模型悄悄挑一个答案」准备的：它的引用集合内部自洽（都写 15 天），
+    `unhandled_conflict` 抓不到；但只要上一轮检索给过冲突线索，就说明库里还有另一个值。
+    为了不误杀合法的条件化回答，带适用范围词的回答直接放行。
+    """
+    if not hint:
+        return []
+    unit = canon_unit(str(hint.get("unit") or ""))
+    values = [str(v) for v in hint.get("values") or []]
+    if len(values) < 2:
+        return []
+    facts = extract_facts(answer_text)
+    related = [f for f in facts if f["kind"] == "quantity" and canon_unit(f["unit"]) == unit]
+    if not related:
+        return []  # 回答压根没谈这个单位（比如问的是金额），不归这条管
+    mentioned = {f["value"] for f in related}
+    if set(values) <= mentioned:
+        return []
+    if any(marker in answer_text for marker in SCOPE_MARKERS):
+        return []
+    missing = sorted(set(values) - mentioned)
+    return [
+        _err(
+            "cherry_picked_conflict",
+            f"检索线索显示 {unit}存在互斥取值 {values}，回答只出现 {sorted(mentioned)}，"
+            f"且未说明适用范围；必须并列说明冲突或转为请求确认",
+            unit=unit,
+            values=values,
+            missing=missing,
+        )
+    ]
+
+
 def verify_answer(
     answer_text: str,
     citations: Any,
     store: DocStore,
     require_conflict_disclosure: bool = True,
+    hint: dict | None = None,
 ) -> dict:
     """`answer` 动作的终审。ok=True 才允许以 answered 状态结束。"""
     errors: list[dict] = []
@@ -162,6 +215,7 @@ def verify_answer(
         errors.extend(check_numbers(answer_text, verified))
         if require_conflict_disclosure:
             errors.extend(check_conflict_handling(answer_text, verified))
+            errors.extend(check_hint_coverage(answer_text, hint))
     errors = _dedupe(errors)
     return {
         "ok": not errors,
