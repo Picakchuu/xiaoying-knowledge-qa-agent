@@ -1,0 +1,15 @@
+{
+  "id": "case_b1_limit",
+  "question": "年假可以攒到明年吗？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 3,
+    "max_tool_calls": 1
+  },
+  "expect": "incomplete，明确 reason"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "case_a6_tool_transient",
+  "question": "报销期限多久？",
+  "history": [],
+  "corpus": "conflict_min",
+  "faults": [
+    "search_docs:timeout:2"
+  ],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "重试后恢复，状态如实"
+}

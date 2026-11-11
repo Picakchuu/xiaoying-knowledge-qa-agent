@@ -1,0 +1,21 @@
+{
+  "question": "出差打车一天最多能报多少？",
+  "status": "answered",
+  "answer": "根据检索到的制度原文：出差期间的市内交通费按实际发生额报销，单日合计不超过 200 元。",
+  "citations": [
+    {
+      "doc_id": "D02",
+      "chunk_id": "D02#c4",
+      "quote": "出差期间的市内交通费按实际发生额报销，单日合计不超过 200 元。"
+    }
+  ],
+  "gaps": [],
+  "steps": 4,
+  "tool_calls": 3,
+  "model": "mock",
+  "reason": "引用逐字可核、数值均有出处，校验通过",
+  "duration_ms": 2,
+  "trace_path": "D:\\project\\xiaoying-knowledge-qa-agent\\examples\\case_a4c_query_rewrite\\trace.jsonl",
+  "expect": "answered，改写后命中 D02#c4（200 元）",
+  "mode": "mock"
+}

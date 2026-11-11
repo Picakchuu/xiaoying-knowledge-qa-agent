@@ -1,0 +1,15 @@
+{
+  "id": "case_a1_answered",
+  "question": "年假可以攒到明年吗？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "answered，引用 D03#c2"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "case_c1_content_swap",
+  "question": "报销期限多久？",
+  "history": [],
+  "corpus": "conflict_min",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs",
+    "data\\regression\\d01_45days"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "冲突值变成 45 vs 15"
+}

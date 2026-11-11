@@ -1,0 +1,17 @@
+{
+  "question": "年假可以攒到明年吗？",
+  "status": "incomplete",
+  "answer": "达到上限（tool_call_limit）：已用 2 步 / 1 次工具调用仍未得出结论。",
+  "citations": [],
+  "gaps": [
+    "未完成：tool_call_limit"
+  ],
+  "steps": 2,
+  "tool_calls": 1,
+  "model": "mock",
+  "reason": "达到上限 tool_call_limit，已完成动作：search_docs:ok",
+  "duration_ms": 1,
+  "trace_path": "D:\\project\\xiaoying-knowledge-qa-agent\\examples\\case_b1_limit\\trace.jsonl",
+  "expect": "incomplete，明确 reason",
+  "mode": "mock"
+}

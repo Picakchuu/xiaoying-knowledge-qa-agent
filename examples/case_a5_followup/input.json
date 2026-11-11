@@ -1,0 +1,24 @@
+{
+  "id": "case_a5_followup",
+  "question": "那试用期员工呢？",
+  "history": [
+    {
+      "question": "年假可以攒到明年吗？",
+      "answer": "当年未休完的年假不得结转至次年。",
+      "status": "answered",
+      "cited_doc_ids": [
+        "D03"
+      ]
+    }
+  ],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "answered，引用 D04#c3"
+}

@@ -1,0 +1,21 @@
+{
+  "question": "那试用期员工呢？",
+  "status": "answered",
+  "answer": "根据检索到的制度原文：试用期内员工不享受年假，确有需要可申请事假。",
+  "citations": [
+    {
+      "doc_id": "D04",
+      "chunk_id": "D04#c3",
+      "quote": "试用期内员工不享受年假，确有需要可申请事假。"
+    }
+  ],
+  "gaps": [],
+  "steps": 5,
+  "tool_calls": 4,
+  "model": "mock",
+  "reason": "引用逐字可核、数值均有出处，校验通过",
+  "duration_ms": 3,
+  "trace_path": "D:\\project\\xiaoying-knowledge-qa-agent\\examples\\case_a5_followup\\trace.jsonl",
+  "expect": "answered，引用 D04#c3",
+  "mode": "mock"
+}

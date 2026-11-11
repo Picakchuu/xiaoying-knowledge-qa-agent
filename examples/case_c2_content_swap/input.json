@@ -1,0 +1,16 @@
+{
+  "id": "case_c2_content_swap",
+  "question": "年假可以攒到明年吗？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs",
+    "data\\regression\\d03_carryover_allowed"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "答案反转为「可结转」"
+}

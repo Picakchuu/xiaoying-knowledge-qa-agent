@@ -1,0 +1,17 @@
+{
+  "question": "公司明年会裁员吗？",
+  "status": "insufficient",
+  "answer": "多轮检索只召回弱相关片段，文档库中没有能支撑该问题的内容。",
+  "citations": [],
+  "gaps": [
+    "与该问题直接相关的制度或 FAQ 条目"
+  ],
+  "steps": 4,
+  "tool_calls": 3,
+  "model": "mock",
+  "reason": "模型主动以 insufficient 结束：多轮检索只召回弱相关片段，文档库中没有能支撑该问题的内容。",
+  "duration_ms": 1,
+  "trace_path": "D:\\project\\xiaoying-knowledge-qa-agent\\examples\\case_a3_out_of_scope\\trace.jsonl",
+  "expect": "insufficient，无引用",
+  "mode": "mock"
+}

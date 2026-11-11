@@ -1,0 +1,15 @@
+{
+  "id": "case_a4c_query_rewrite",
+  "question": "出差打车一天最多能报多少？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "answered，改写后命中 D02#c4（200 元）"
+}

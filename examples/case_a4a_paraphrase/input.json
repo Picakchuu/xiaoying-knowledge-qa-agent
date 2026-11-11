@@ -1,0 +1,15 @@
+{
+  "id": "case_a4a_paraphrase",
+  "question": "年假没用完能留到明年吗？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "answered，与 A1 同源 D03#c2"
+}

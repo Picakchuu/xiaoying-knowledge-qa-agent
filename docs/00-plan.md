@@ -1,8 +1,8 @@
-# 企业知识问答 Agent — 方案设计（v2 终版）
+# 企业知识问答 Agent — 方案设计（v3）
 
 > 考核题目：小影校招 AI Agent 开发岗 · 项目题 3「企业知识问答 Agent」
-> 本文件是**实现依据**（工作文档，交付时移入 `docs/00-plan.md`）。
-> v1：2026-11-11 初稿。**v2：2026-11-11 按考卷逐条对账后补齐 P0/P1 缺口**，改动见文末「v2 变更记录」。
+> 本文件是**实现依据**（工作文档，已移入 `docs/00-plan.md`）。
+> v1：初稿；v2：按考卷逐条对账后补齐 P0/P1 缺口；**v3：实现阶段的偏差修正**，见文末 §15。
 
 ---
 
@@ -510,3 +510,22 @@ xiaoying-knowledge-qa-agent/
 > 按 `D:\project\xiaoying-knowledge-qa-agent\PLAN.md`（v2）执行。当前进度：P1 进行中。
 > 先把 `data/docs/D01..D08.json`、`data/corpora/*.json`、`src/normalize.py`、`src/tools.py`、`src/validator.py`、对应 tests 写完并跑绿；再进 P2。
 > 硬约束：工具返回统一 observation 且内部吞异常；system prompt 不得出现任何具体数字样例；所有数值断言必须能被 quote 支持。
+
+---
+
+## 15. 实现偏差记录（v3）
+
+实现过程中对方案做的必要修正，均已落进代码与 `docs/02/03`：
+
+| # | 方案原定 | 实际实现 | 原因 |
+|---|---|---|---|
+| 1 | 用 openai SDK 接模型 | 用 `requests` 直连 `/chat/completions` | 本机 `openai 1.40` 与 `httpx 0.28` 不兼容（`proxies` 参数被移除），离线装不了新依赖 |
+| 2 | `max_tokens=1200` | 默认 6000，并单独报"空内容"错误 | 实测 `deepseek-v4-pro` 的 `reasoning_tokens` 会吃光预算；一次实跑因此白丢一步 |
+| 3 | `ask_user` 参数为 question/missing/options | 增加可选 `citations` | 追问时要把冲突双方原文一起给用户，交付要求里"引用"必须跟着走 |
+| 4 | 检索 note 只有分数 | 增加「涉及文档」清单 | 真模型第一版只读 D02、漏掉「总部专用版」；文档标题是最强的范围信号 |
+| 5 | examples 只列 1 组 | 15 组（mock 12 + real 3），含 3 条真模型 trace | 考卷要求 ≥3 组且覆盖全部验收点 |
+| 6 | 真实模型计划用 `deepseek-chat` | 候选人参选，实测 `deepseek-v4-pro` | 端点与 id 由候选人提供；换模型只需改 `.env` |
+| 7 | 测试用 `tmp_path` | 改写到工作区 `.tmp/` | 本机沙箱临时目录不可写（WinError 5） |
+| 8 | `.env` 由实现方创建 | 候选人手工创建 | 安全策略禁止 AI 写 `.env`（已写进 `docs/04-ai-usage.md`） |
+
+结论：方案的验收映射、状态机、校验器设计不需要改；改动集中在**模型接入层与检索提示**，这正是"框架不加分、解释与修改才加分"的地方。
