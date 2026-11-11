@@ -21,6 +21,10 @@ DEFAULT_MAX_STEPS = 12
 DEFAULT_MAX_TOOL_CALLS = 8
 MAX_ASK_USER_ROUNDS = 2
 
+# 回答里出现这些说法，说明模型自己承认"文档没有这项信息" -> 必须补进资料缺口
+_MISSING_MARKERS = ("未提供", "没有提供", "未给出", "未说明", "未写明", "未包含", "没有写明")
+_PRICE_HINTS = ("多少钱", "价格", "单价", "报价", "费用是多少", "年费")
+
 FALLBACK_ANSWER = ""
 
 
@@ -45,10 +49,12 @@ class Agent:
 
     def run(self, question: str) -> dict:
         started = time.perf_counter()
+        self._question = question
         observations: list[dict] = []
         tool_calls = 0
         parse_failures = 0
         ask_user_rounds = 0
+        consecutive_failures = 0
         self.trace.start(
             {
                 "model": getattr(self.model, "name", "unknown"),
@@ -153,6 +159,26 @@ class Agent:
             observations.append(observation)
             self.trace.observe(observation)
 
+            if observation.get("ok"):
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+            # 同一个工具连续失败 3 次：模型还在换 query 硬试，但已经不可能拿到证据了。
+            # 真模型实测会一直重试到步数上限（返回 incomplete），这里提前收口为 failed。
+            if consecutive_failures >= 3:
+                return self._finish(
+                    question,
+                    "failed",
+                    f"工具连续失败 {consecutive_failures} 次（{observation.get('error_code')}），已停止重试。",
+                    [],
+                    [f"工具不可用：{observation.get('error_code')}"],
+                    step,
+                    tool_calls,
+                    started,
+                    "工具持续失败且无降级路径，按红线不编造答案",
+                    observations,
+                )
+
         return self._finish_incomplete(question, self.max_steps, tool_calls, started, "step_limit", observations)
 
     # ---------------------------------------------------------------- 终审
@@ -185,6 +211,22 @@ class Agent:
                     return hint
         return None
 
+    def _infer_gaps(self, question: str, answer: str, provided: list | None) -> list[str]:
+        """模型说"文档没写"却没填 missing 时的兜底。
+
+        这是被真实模型的一个失败样本逼出来的：回答「文档未提供具体价格，请联系销售」，
+        但 gaps 为空，交付要求里的"资料缺口"就缺了一块。
+        """
+        if provided:
+            return list(provided)
+        if not any(marker in answer for marker in _MISSING_MARKERS):
+            return []
+        if any(hint in question for hint in _PRICE_HINTS):
+            return ["具体价格/报价单"]
+        if any(hint in question for hint in ("适用", "总部", "分支", "范围")):
+            return ["适用制度范围"]
+        return ["文档未提供的具体信息"]
+
     def _judge(self, action: dict, ask_user_rounds: int, observations: list[dict]) -> dict:
         name = action["action"]
         args = action["args"]
@@ -197,12 +239,13 @@ class Agent:
                 hint=self._latest_hint(observations),
             )
             if result["ok"]:
+                answer_text = args.get("answer_text", "")
                 return {
                     "final": True,
                     "status": "answered",
-                    "answer": args.get("answer_text", ""),
+                    "answer": answer_text,
                     "citations": result["verified"],
-                    "gaps": args.get("missing") or [],
+                    "gaps": self._infer_gaps(getattr(self, "_question", ""), answer_text, args.get("missing")),
                     "reason": "引用逐字可核、数值均有出处，校验通过",
                     "observation": obs_ok("validator", result, "引用校验通过", None),
                 }

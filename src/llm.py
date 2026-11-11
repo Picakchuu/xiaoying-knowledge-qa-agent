@@ -383,6 +383,36 @@ class _HTTPError(Exception):
         self.message = message
 
 
+def parse_first_json(content: str) -> dict:
+    """从模型输出里取第一个完整的 JSON 对象。
+
+    真实模型经常在 JSON 后面跟一句解释、或者输出两个对象（实测 deepseek-chat 会这样），
+    "严格 json.loads 整段"会让整轮失败——而错误其实只是尾部多了点东西。
+    这里用 raw_decode 只取第一个对象，多余的尾部直接忽略（并由调用方决定是否记录）。
+    """
+    text = (content or "").strip()
+    if text.startswith("```"):
+        text = "\n".join(
+            line for line in text.splitlines() if not line.strip().startswith("```")
+        ).strip()
+    if not text:
+        raise ValueError("空内容")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(text):
+            if char != "{":
+                continue
+            try:
+                obj, _ = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                return obj
+        raise
+
+
 class OpenAICompatibleModel:
     """OpenAI 兼容端点（默认 DeepSeek）。只做一件事：把状态发过去，拿回动作 JSON。
 
@@ -489,8 +519,10 @@ class OpenAICompatibleModel:
                 f"模型返回空内容{hint}：max_tokens 可能被思维链耗尽，调大 MODEL_MAX_TOKENS 再试"
             )
         try:
-            return json.loads(content)
-        except (TypeError, json.JSONDecodeError) as exc:
+            return parse_first_json(content)
+        except ValueError:
+            raise DecisionError("模型没有返回合法 JSON") from None
+        except json.JSONDecodeError as exc:
             raise DecisionError(f"模型没有返回合法 JSON：{exc}") from exc
 
 

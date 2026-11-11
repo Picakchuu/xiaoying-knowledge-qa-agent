@@ -1,10 +1,11 @@
-# 03 · 评测：预期、实际、失败与限制
+﻿# 03 · 评测：预期、实际、失败与限制
 
 ## 1. 怎么复核（三步）
 
 ```powershell
-python -m pytest                                  # 75 passed，原始输出见 examples/test-results.txt
-python scripts/make_examples.py --mode mock       # 重跑 12 组离线用例（秒级）
+python -m pytest                                  # 101 passed, 6 skipped，原始输出见 examples/test-results.txt
+python scripts/selfcheck.py                       # 12/12 验收行为（mock 决策器，秒级）
+MODEL_NAME=deepseek-chat python scripts/real_eval.py   # 真模型评测，报告见 examples/real-eval-deepseek-chat.md
 python -m src.cli --input examples/case_a2_conflict/input.json --model mock --json
 ```
 
@@ -119,7 +120,50 @@ step5 answer  ← 改成只保留有出处的表述 → answered，引用 D02b#c
 | 步数上限 | `case_b1_limit`：`incomplete`，`reason` 含 `tool_call_limit`，已完成动作可查 | 通过 |
 | 内容替换 | `case_c1_content_swap`：D01 改 45 天 → 冲突值随之变 45 vs 15；`case_c2_content_swap`：D03 改可结转 → 答案反转 | 通过 |
 
-## 5. 失败与已知限制（如实）
+## 5. 真实模型评测（可重复，`scripts/real_eval.py`）
+
+前面 §2 的矩阵是 **mock 决策器**跑出来的（证明流程与控制），下面这份是**真模型**跑的同一批用例：
+`MODEL_NAME=deepseek-chat python scripts/real_eval.py`，报告落盘 `examples/real-eval-deepseek-chat.md`。
+
+最近一次结果（2026-11-11，14 条，跳过 `b1_limit` 这类纯控制流用例）：
+
+| 用例 | 期望 | 实际 | 步数 | 引用 | tokens | 耗时 |
+|---|---|---|---|---|---|---|
+| a1_answered | answered | answered | 2 | 1 | 1488 | 4.5s |
+| a2_conflict | conflict_pending | conflict_pending | 6 | 2 | 2284 | 16.4s |
+| a2b_scoped_conflict | conflict_pending | conflict_pending | 6 | 4 | 2488 | 15.7s |
+| a2c_scoped_answered | answered | answered | 8 | 2 | 2305 | 20.3s |
+| a3_out_of_scope | insufficient | insufficient | 5 | 0 | 1012 | 12.4s |
+| a3b_missing_detail | answered/insufficient | answered（带缺口） | 4 | 3 | 2544 | 11.2s |
+| a4a_paraphrase | answered | answered | 3 | 1 | 1613 | 8.4s |
+| a4c_query_rewrite | answered | answered | 5 | 1 | 2813 | 14.2s |
+| a5_followup | answered | answered | 3 | 1 | 1626 | 6.5s |
+| a6_tool_transient | conflict_pending | conflict_pending | 8 | 2 | 2346 | 27.6s |
+| a6b_tool_down | failed | failed | 3 | 0 | 927 | 7.2s |
+| a7_deprecated | answered | answered | 5 | 2 | 2267 | 15.2s |
+| c1_content_swap | conflict_pending | conflict_pending | 6 | 2 | 2298 | 22.9s |
+| c2_content_swap | answered | answered | 3 | 2 | 1693 | 8.8s |
+
+**14/14 通过**，总 tokens 27704，总耗时 191 秒（单条 4.5–27.6 秒）。另有三条 `deepseek-v4-pro` 的记录在 `examples/case_a2*`（强模型基线，单条 33–146 秒）。
+
+### 真模型测试抓到的三个问题（都已修）
+
+| # | 现象 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | a3b 回答「文档未提供具体价格」但 `gaps` 为空 | 模型不填 `missing` | 代码兜底：回答含「未提供/未写明」且缺口为空 → 按问题类型回填（`_infer_gaps`） |
+| 2 | a6b 持续故障时模型一路重试到步数上限，返回 `incomplete` 而不是 `failed` | 没有任何熔断 | 同一工具连续失败 3 次 → 代码直接 `failed`，不再让模型空转 |
+| 3 | a4c / a7 间歇性 `failed`（`模型连续输出不可用`） | `deepseek-chat` 会在 JSON 后面再跟一段说明，严格 `json.loads` 整段直接报错 | 只取输出里第一个完整 JSON 对象（`parse_first_json`），并容忍代码围栏 |
+
+这三条如果只跑 mock，永远发现不了——mock 是我写的规则，它不会"多说一句话"，也不会"一直重试到底"。
+
+### 评测的边界
+
+- 真模型有随机性：同一用例两次运行步数会不同（a2c 出现过 5、6、8 步），所以断言的是**行为区间**而不是精确步数；
+- 一条用例跑一次通过不代表稳定，量产应该跑 3–5 次取多数；
+- 本次矩阵用的是 `deepseek-chat`（快、便宜）；`deepseek-v4-pro` 的三条强模型记录单独保留在 `examples/case_a2*`。
+
+## 6. 失败与已知限制（如实）
+
 
 1. **真实模型不稳定**：同一问题多次跑，步数不同（曾出现 4/3 与 5/4 两种）。这是模型采样带来的正常差异，文档里给的是其中一次的记录。
 2. **推理预算会吃掉输出**：`deepseek-v4-pro` 会把 token 先花在 `reasoning_tokens` 上。第一次跑 A2b 时 `max_tokens=3000` 被思维链占满，模型返回空内容，白丢一步。已改为默认 6000 并在客户端明确报错。
@@ -129,7 +173,7 @@ step5 answer  ← 改成只保留有出处的表述 → answered，引用 D02b#c
 6. **2-gram 召回有天花板**：语料里没有的说法（例如"违约金"）召不回来，同义词表只有 12 条。
 7. **延迟偏高**：推理型模型单次作答 1~2.5 分钟（A2 实测 5 步 7055 tokens）。交互场景需要换非推理模型或加流式。
 
-## 6. 被替换内容后会不会"照旧回答"？（评审可自行验证）
+## 7. 被替换内容后会不会"照旧回答"？（评审可自行验证）
 
 ```powershell
 # 把 D01 的 30 天改成 45 天（夹具已在仓库里）

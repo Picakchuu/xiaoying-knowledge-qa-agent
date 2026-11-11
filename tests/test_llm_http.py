@@ -79,6 +79,28 @@ def test_non_json_content_is_a_decision_error(monkeypatch: pytest.MonkeyPatch) -
         model.decide({"question": "q"})
 
 
+def test_trailing_explanation_after_json_is_tolerated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """实测 deepseek-chat 会在 JSON 后面再跟一段说明或第二个对象。"""
+    content = FINISH + "\n\n说明：以上是下一步动作。"
+    monkeypatch.setattr(llm.requests, "post", lambda *args, **kwargs: _ok(content=content))
+    model = OpenAICompatibleModel(api_key="k")
+    assert model.decide({"question": "q"})["action"] == "finish"
+
+
+def test_two_json_objects_take_the_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    content = FINISH + '\n{"action":"finish","args":{"status":"failed","summary":"x"}}'
+    monkeypatch.setattr(llm.requests, "post", lambda *args, **kwargs: _ok(content=content))
+    model = OpenAICompatibleModel(api_key="k")
+    assert model.decide({"question": "q"})["args"]["status"] == "insufficient"
+
+
+def test_code_fenced_json_is_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    content = "```json\n" + FINISH + "\n```"
+    monkeypatch.setattr(llm.requests, "post", lambda *args, **kwargs: _ok(content=content))
+    model = OpenAICompatibleModel(api_key="k")
+    assert model.decide({"question": "q"})["action"] == "finish"
+
+
 def test_malformed_payload_is_a_decision_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(llm.requests, "post", lambda *args, **kwargs: FakeResponse(200, {"foo": 1}))
     model = OpenAICompatibleModel(api_key="k")

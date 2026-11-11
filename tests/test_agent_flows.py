@@ -128,6 +128,36 @@ def test_a6b_persistent_failure_is_failed() -> None:
     assert result["citations"] == []
 
 
+def test_a6b_circuit_breaker_stops_after_three_failures() -> None:
+    """真模型会一直换 query 重试到步数上限；连续 3 次失败后必须由代码收口。"""
+
+    class AlwaysSearch:
+        name = "always-search"
+
+        def decide(self, ctx):  # noqa: ANN001 - 测试桩
+            return {"action": "search_docs", "args": {"query": "报销期限"}, "why": "再试一次"}
+
+    agent = Agent(
+        model=AlwaysSearch(),
+        tools=Tools(DocStore(corpus="conflict_min"), faults=["search_docs:timeout"]),
+        max_steps=12,
+        max_tool_calls=8,
+    )
+    result = agent.run("报销期限多久？")
+    assert result["status"] == "failed"
+    assert result["tool_calls"] == 3
+    assert "连续失败" in result["answer"]
+    assert result["citations"] == []
+
+
+def test_gaps_backfilled_when_answer_admits_missing() -> None:
+    """模型说「文档未提供 X」却没填 missing 时，代码兜底补缺口（真模型实测踩到）。"""
+    agent = Agent(model=MockModel(), tools=Tools(DocStore(corpus="full")))
+    assert agent._infer_gaps("专业版一年多少钱？", "文档未提供具体价格，请联系销售。", None) == ["具体价格/报价单"]
+    assert agent._infer_gaps("年假能攒吗？", "当年未休完的年假不得结转至次年。", None) == []
+    assert agent._infer_gaps("随便问", "文档未提供相关信息", ["自定义缺口"]) == ["自定义缺口"]
+
+
 def test_a7_deprecated_document_not_used_as_current() -> None:
     result = run_agent("报销需要交纸质发票吗？")
     assert result["status"] == "answered"
