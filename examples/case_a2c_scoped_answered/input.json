@@ -1,0 +1,15 @@
+{
+  "id": "case_a2c_scoped_answered",
+  "question": "我是总部员工，报销期限多久？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "answered，条件已给定时按 D02b 作答"
+}
