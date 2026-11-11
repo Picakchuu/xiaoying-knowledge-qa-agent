@@ -1,4 +1,4 @@
-"""交互式会话入口：进入之后就像聊天一样连续提问。
+﻿"""交互式会话入口：进入之后就像聊天一样连续提问。
 
   python -m src.repl
   python -m src.repl --model real --corpus full
@@ -105,7 +105,7 @@ class Session:
         parts = line.strip().split()
         name = parts[0].lower()
         if name in {"/quit", "/exit", "/q"}:
-            return False, "再见喵～"
+            return False, "会话结束。"
         if name in {"/help", "/h", "/?"}:
             return True, __doc__.split("常用命令")[1].strip() if "常用命令" in (__doc__ or "") else "/help"
         if name == "/reset":
@@ -187,7 +187,7 @@ def run(session: Session, lines, write, prompt: str = "你› ") -> None:
         try:
             line = next(lines)
         except StopIteration:
-            write("再见喵～")
+            write("会话结束。")
             return
         line = (line or "").strip()
         if not line:
