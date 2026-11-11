@@ -49,7 +49,9 @@ CASES: list[dict] = [
     {"id": "case_a3_out_of_scope", "question": "公司明年会裁员吗？", "corpus": "no_claim",
      "expect": "资料外：无引用", "status": "insufficient", "cites": []},
     {"id": "case_a3b_missing_detail", "question": "专业版一年多少钱？", "corpus": "full",
-     "expect": "资料不足：缺口=具体价格", "status": "insufficient", "cites": []},
+     "expect": "资料不足：缺口=具体价格", "status": "insufficient", "cites": [],
+     # 真模型可能选择"告知获取方式 + 标注缺口"而不是直接拒答，两种都允许
+     "real_statuses": ["answered", "insufficient"]},
     {"id": "case_a4a_paraphrase", "question": "年假没用完能留到明年吗？", "corpus": "full",
      "expect": "改写问法：与 A1 同源 D03#c2", "status": "answered", "cites": ["D03#c2"]},
     {"id": "case_a4c_query_rewrite", "question": "出差打车一天最多能报多少？", "corpus": "full",
@@ -66,7 +68,9 @@ CASES: list[dict] = [
      "expect": "版本意识：不把已废止的 D08 当现行", "status": "answered", "cites": ["D01#c3"]},
     {"id": "case_b1_limit", "question": "年假可以攒到明年吗？", "corpus": "full",
      "max_steps": 3, "max_tool_calls": 1, "expect": "上限：incomplete + 明确 reason",
-     "status": "incomplete", "cites": []},
+     "status": "incomplete", "cites": [],
+     # 上限是控制流行为：由 mock/单测验证（真模型可能 3 步内就答完，测不到"触顶"）
+     "mock_only": True},
     {"id": "case_c1_content_swap", "question": "报销期限多久？", "corpus": "conflict_min",
      "docs_dirs": [DOCS, REGRESSION / "d01_45days"], "expect": "内容替换：冲突值变成 45 vs 15",
      "status": "conflict_pending", "cites": ["D01#c2", "D02#c2"]},

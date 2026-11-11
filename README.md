@@ -1,4 +1,4 @@
-# 企业知识问答 Agent（题目三）
+﻿# 企业知识问答 Agent（题目三）
 
 > 小影校招 AI Agent 开发岗 · 项目题 3
 > 给员工一个**可追溯到原文**的答案；查不到就说查不到；文档打架就说打架并请求确认。
@@ -12,11 +12,21 @@
 | HTTP | `python -m src.http_app --port 8000` | 当服务调用（`POST /ask`） |
 | 浏览器 | 打开 `http://127.0.0.1:8000` | 不写命令，点示例看状态/引用/决策过程 |
 
+## 三层测试（各自证明什么）
+
+| 层 | 命令 | 是否联网 | 证明什么 |
+|---|---|---|---|
+| 单元/集成 | `python -m pytest` | 否（模型客户端全打桩） | 检索、校验、主循环、上限、内容替换、CLI 参数、HTTP 处理函数、模型客户端解析 |
+| 验收行为 | `python scripts/selfcheck.py` | 否（mock 决策器） | 12 组用例的状态/引用/缺口不变量：该拒答的零引用、冲突必须带 ≥2 份来源 |
+| **真实模型** | `python scripts/real_eval.py` | **是**（需 key） | 同一批用例由真模型跑，断言行为区间并出报告（状态、引用可核、缺口、耗时、tokens） |
+
+最近一次真实模型评测报告：[examples/real-eval-deepseek-chat.md](examples/real-eval-deepseek-chat.md)。
+
 ## 3 步跑通（无需 key）
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest                                   # 75 passed（代码级断言）
+python -m pytest                                   # 101 passed, 6 skipped（HTTP 端到端在本机沙箱被跳过）（代码级断言）
 python scripts/selfcheck.py                        # 12/12 验收行为自测（状态/引用/不变量）
 python -m src.cli --question "报销期限多久？" --corpus conflict_min
 ```
