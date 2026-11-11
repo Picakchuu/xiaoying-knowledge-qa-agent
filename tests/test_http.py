@@ -1,8 +1,24 @@
-"""HTTP 薄封装的冒烟测试（不监听端口，直接测处理函数）。"""
+"""HTTP 薄封装的冒烟测试（不监听端口，直接测处理函数与页面）。"""
 
 from __future__ import annotations
 
-from src.http_app import build_agent, handle_ask
+from src.http_app import PAGE, build_agent, handle_ask
+
+
+def test_page_is_self_contained() -> None:
+    """页面不能依赖 CDN：离线/内网评审也能打开。"""
+    assert 'fetch("/ask"' in PAGE
+    assert "http://" not in PAGE.replace("http://127.0.0.1", "")
+    assert "https://" not in PAGE
+
+
+def test_page_has_corpus_placeholder() -> None:
+    assert "__CORPUS__" in PAGE
+
+
+def test_page_lists_acceptance_examples() -> None:
+    for marker in ("报销期限多久？", "年假可以攒到明年吗？", "公司明年会裁员吗？"):
+        assert marker in PAGE
 
 
 def test_handle_ask_returns_full_payload() -> None:

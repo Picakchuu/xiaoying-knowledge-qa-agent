@@ -94,8 +94,10 @@ python -m src.cli --question "年假可以攒到明年吗？" --max-steps 3 --ma
 # 多轮（追问）
 python -m src.cli --input examples/case_a5_followup/input.json --json
 
-# HTTP 封装
-python -m src.http_app --port 8000            # POST /ask {"question": "..."}
+# HTTP 封装 + 浏览器演示页（零依赖，无需构建）
+python -m src.http_app --port 8000
+#   → 浏览器打开 http://127.0.0.1:8000 直接点示例提问
+#   → 或 curl 调 POST /ask：{"question": "报销期限多久？"}
 
 # 重新生成全部 examples
 python scripts/make_examples.py --mode mock
