@@ -7,7 +7,8 @@
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest                                   # 71 passed
+python -m pytest                                   # 71 passed（代码级断言）
+python scripts/selfcheck.py                        # 12/12 验收行为自测（状态/引用/不变量）
 python -m src.cli --question "报销期限多久？" --corpus conflict_min
 ```
 
