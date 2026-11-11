@@ -22,6 +22,172 @@ from .trace import StepTrace
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DOCS_DIR = str(PROJECT_ROOT / "data" / "docs")
 
+# ---------------------------------------------------------------- 演示页面
+# 零外部依赖：没有 CDN、没有构建步骤，起服务就能点。界面本身不是考卷要求，
+# 只是为了让人能"看见"状态、引用、资料缺口和步数。
+PAGE = """<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业知识问答 Agent · 演示</title>
+<style>
+  :root { --bg:#0d1322; --panel:#151d31; --line:#26324b; --text:#e8eeff; --muted:#8ea0c4;
+          --ok:#3ecf8e; --warn:#f0b429; --bad:#ef6b6b; --accent:#5b8def; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:19px; margin:0 0 6px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:22px; }
+  .sub code { background:#1b2540; padding:1px 6px; border-radius:5px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  textarea { width:100%; min-height:76px; resize:vertical; background:#0b1120; color:var(--text);
+             border:1px solid var(--line); border-radius:10px; padding:12px; font:inherit; }
+  .row { display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .chip { background:#1b2540; border:1px solid var(--line); color:#c9d6f5; border-radius:999px;
+          padding:5px 12px; font-size:13px; cursor:pointer; }
+  .chip:hover { border-color:var(--accent); color:#fff; }
+  button.go { background:var(--accent); border:0; color:#fff; border-radius:9px;
+              padding:9px 20px; font:inherit; cursor:pointer; }
+  button.go[disabled] { opacity:.55; cursor:default; }
+  .hint { color:var(--muted); font-size:12px; margin-left:auto; }
+  #out { margin-top:22px; display:none; }
+  .badge { display:inline-block; font-size:13px; padding:3px 12px; border-radius:999px;
+           border:1px solid currentColor; }
+  .status-answered { color:var(--ok); } .status-conflict_pending { color:var(--warn); }
+  .status-insufficient { color:var(--muted); } .status-failed { color:var(--bad); }
+  .status-incomplete { color:var(--bad); }
+  h2 { font-size:14px; color:var(--muted); font-weight:600; margin:20px 0 8px; letter-spacing:.4px; }
+  .answer { white-space:pre-wrap; }
+  .cite { border-left:3px solid var(--accent); padding:8px 12px; margin:10px 0;
+          background:#111a2c; border-radius:0 8px 8px 0; }
+  .cite .meta { color:var(--muted); font-size:12px; }
+  .cite .quote { color:#d7e2fb; font-size:14px; }
+  .gaps li { color:var(--warn); }
+  .meta { color:var(--muted); font-size:12.5px; margin-top:14px; }
+  details { margin-top:14px; color:var(--muted); font-size:12.5px; }
+  pre { background:#0b1120; border:1px solid var(--line); border-radius:10px;
+        padding:12px; overflow:auto; color:#b7c6e8; font-size:12px; }
+  .err { color:var(--bad); white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>企业知识问答 Agent</h1>
+  <div class="sub">
+    依据文档原文作答，结论必须带引用；两份制度打架时会列出冲突并请你确认。
+    当前语料：<code id="corpus">__CORPUS__</code>（用 <code>--corpus conflict_min</code> 启动可看"纯冲突"路径）
+  </div>
+
+  <div class="panel">
+    <textarea id="q" placeholder="问点什么，例如：报销期限多久？"></textarea>
+    <div class="chips" id="chips"></div>
+    <div class="row">
+      <button class="go" id="go">提问</button>
+      <span class="hint" id="hint">离线 mock 决策器，秒级返回</span>
+    </div>
+  </div>
+
+  <div id="out" class="panel">
+    <div><span id="badge" class="badge"></span></div>
+    <h2>回答</h2>
+    <div class="answer" id="answer"></div>
+    <h2>引用（逐字原文）</h2>
+    <div id="cites"></div>
+    <h2>资料缺口</h2>
+    <ul class="gaps" id="gaps"></ul>
+    <div class="meta" id="meta"></div>
+    <details><summary>原始 JSON</summary><pre id="raw"></pre></details>
+  </div>
+</div>
+
+<script>
+const EXAMPLES = [
+  { label: "报销期限多久？", q: "报销期限多久？" },
+  { label: "我是总部员工，报销期限多久？", q: "我是总部员工，报销期限多久？" },
+  { label: "年假可以攒到明年吗？", q: "年假可以攒到明年吗？" },
+  { label: "那试用期员工呢？（多轮）", q: "那试用期员工呢？",
+    history: [{ question: "年假可以攒到明年吗？", answer: "不得结转至次年", status: "answered", cited_doc_ids: ["D03"] }] },
+  { label: "专业版一年多少钱？（资料不足）", q: "专业版一年多少钱？" },
+  { label: "公司明年会裁员吗？（资料外）", q: "公司明年会裁员吗？" },
+  { label: "报销需要交纸质发票吗？（版本）", q: "报销需要交纸质发票吗？" }
+];
+
+const $ = (id) => document.getElementById(id);
+let currentHistory = [];
+
+function renderChips() {
+  EXAMPLES.forEach((item) => {
+    const el = document.createElement("button");
+    el.className = "chip";
+    el.textContent = item.label;
+    el.onclick = () => { $("q").value = item.q; currentHistory = item.history || []; ask(); };
+    $("chips").appendChild(el);
+  });
+}
+
+async function ask() {
+  const question = $("q").value.trim();
+  if (!question) return;
+  $("go").disabled = true;
+  $("hint").textContent = "思考中…";
+  $("out").style.display = "none";
+  try {
+    const res = await fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, history: currentHistory })
+    });
+    const data = await res.json();
+    show(data);
+  } catch (err) {
+    $("out").style.display = "block";
+    $("badge").className = "badge status-failed";
+    $("badge").textContent = "failed";
+    $("answer").innerHTML = '<span class="err">请求失败：' + err + "</span>";
+    $("cites").innerHTML = "";
+    $("gaps").innerHTML = "";
+    $("meta").textContent = "";
+  } finally {
+    $("go").disabled = false;
+    $("hint").textContent = "离线 mock 决策器，秒级返回";
+  }
+}
+
+function show(d) {
+  $("out").style.display = "block";
+  $("badge").className = "badge status-" + d.status;
+  $("badge").textContent = d.status;
+  $("answer").textContent = d.answer || "（无）";
+  $("cites").innerHTML = "";
+  (d.citations || []).forEach((c) => {
+    const box = document.createElement("div");
+    box.className = "cite";
+    box.innerHTML = '<div class="meta">' + c.doc_id + " / " + c.chunk_id + "</div>" +
+                    '<div class="quote">「' + c.quote + "」</div>";
+    $("cites").appendChild(box);
+  });
+  if (!(d.citations || []).length) {
+    $("cites").innerHTML = '<div class="meta">（无引用：这类状态不允许编造出处）</div>';
+  }
+  $("gaps").innerHTML = "";
+  (d.gaps || []).forEach((g) => { const li = document.createElement("li"); li.textContent = g; $("gaps").appendChild(li); });
+  if (!(d.gaps || []).length) { const li = document.createElement("li"); li.textContent = "无"; $("gaps").appendChild(li); }
+  $("meta").textContent = "模型 " + d.model + " ｜ 步数 " + d.steps + " ｜ 工具调用 " +
+    d.tool_calls + " ｜ 耗时 " + d.duration_ms + " ms ｜ 判定：" + (d.reason || "");
+  $("raw").textContent = JSON.stringify(d, null, 2);
+}
+
+$("go").onclick = ask;
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); });
+renderChips();
+</script>
+</body>
+</html>
+"""
+
 
 def build_agent(
     model: str = "mock",
@@ -62,9 +228,22 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_html(self, html: str) -> None:
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:  # noqa: N802 - 标准库约定
-        if self.path in {"/", "/health"}:
-            self._send(200, {"ok": True, "service": "knowledge-qa", "endpoint": "POST /ask"})
+        if self.path in {"/", "/index.html"}:
+            corpus = getattr(getattr(self.agent, "tools", None), "store", None)
+            corpus_name = getattr(corpus, "corpus_name", None) or "full"
+            self._send_html(PAGE.replace("__CORPUS__", str(corpus_name)))
+            return
+        if self.path == "/health":
+            self._send(200, {"ok": True, "service": "knowledge-qa", "endpoint": "POST /ask", "ui": "GET /"})
             return
         self._send(404, {"ok": False, "error": "not found"})
 
