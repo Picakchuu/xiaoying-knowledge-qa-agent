@@ -1,4 +1,4 @@
-﻿"""HTTP 薄封装的冒烟测试（不监听端口，直接测处理函数与页面）。"""
+"""HTTP 薄封装的冒烟测试（不监听端口，直接测处理函数与页面）。"""
 
 from __future__ import annotations
 
@@ -24,6 +24,13 @@ def test_page_lists_acceptance_examples() -> None:
 def test_page_shows_decision_steps_section() -> None:
     assert "决策过程" in PAGE
     assert "trace_steps" in PAGE
+
+
+def test_page_shows_model_and_waiting_hint() -> None:
+    """页面要能告诉用户当前模型是谁、以及正在等多久（真模型一轮可能 1~2 分钟）。"""
+    assert "__MODEL__" in PAGE and "__SLOW__" in PAGE
+    assert "已等待" in PAGE
+    assert "真实模型" in PAGE
 
 
 def test_handle_ask_includes_trace_steps() -> None:
