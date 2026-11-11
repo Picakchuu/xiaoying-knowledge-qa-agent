@@ -11,5 +11,5 @@
     "max_steps": 12,
     "max_tool_calls": 8
   },
-  "expect": "answered，条件已给定时按 D02b 作答"
+  "expect": "冲突可解：条件给定时按 D02b 作答"
 }

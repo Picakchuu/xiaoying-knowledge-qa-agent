@@ -11,5 +11,5 @@
     "max_steps": 12,
     "max_tool_calls": 8
   },
-  "expect": "conflict_pending，并列 D01(30 天)/D02(15 天)"
+  "expect": "文档冲突：并列 D01(30 天)/D02(15 天)"
 }

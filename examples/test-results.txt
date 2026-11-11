@@ -118,4 +118,4 @@ tests/test_validator.py::test_scope_words_in_the_answer_do_not_exempt_it PASSED 
 tests/test_validator.py::test_answer_listing_both_values_passes PASSED   [ 99%]
 tests/test_validator.py::test_hint_of_other_unit_does_not_block_money_answer PASSED [100%]
 
-======================= 105 passed, 6 skipped in 9.87s ========================
+======================= 105 passed, 6 skipped in 10.07s =======================
