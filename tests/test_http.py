@@ -43,6 +43,26 @@ def test_handle_ask_includes_trace_steps() -> None:
     assert steps[-1]["action"] in {"ask_user", "answer", "finish"}
 
 
+def test_trace_steps_are_per_run_not_accumulated() -> None:
+    """同一个 Agent 连续跑两轮，第二轮不能带上第一轮的步骤（页面曾因此串味）。"""
+    agent = build_agent(model="mock", corpus="full")
+    first = handle_ask({"question": "年假可以攒到明年吗？"}, agent)
+    second = handle_ask({"question": "那试用期员工呢？"}, agent)
+    assert len(first["trace_steps"]) == first["steps"]
+    assert len(second["trace_steps"]) == second["steps"]
+    assert "试用期" in str(second["trace_steps"][0]["args"].get("query", ""))
+
+
+def test_server_builds_fresh_agent_per_request() -> None:
+    from src.http_app import Server
+
+    app = Server(model="mock", corpus="conflict_min")
+    first, second = app.new_agent(), app.new_agent()
+    assert first is not second
+    assert app.model_name() == "mock"
+    assert len(app.preview.chunks) > 0
+
+
 def test_handle_ask_returns_full_payload() -> None:
     agent = build_agent(model="mock", corpus="conflict_min")
     result = handle_ask({"question": "报销期限多久？"}, agent)
