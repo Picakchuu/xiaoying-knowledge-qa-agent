@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from .agent import DEFAULT_MAX_STEPS, DEFAULT_MAX_TOOL_CALLS, Agent
-from .llm import build_model
+from .llm import build_model, resolve_model_kind
 from .tools import DocStore, Tools
 from .trace import StepTrace
 
@@ -27,7 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--question", help="用户问题")
     parser.add_argument("--input", help="输入 JSON：{question, history, corpus, docs_dir, faults}")
-    parser.add_argument("--model", default="mock", choices=["mock", "real"], help="mock=离线规则决策器；real=OpenAI 兼容模型")
+    parser.add_argument(
+        "--model",
+        default="auto",
+        choices=["auto", "mock", "real"],
+        help="auto=有 MODEL_API_KEY 就用真实模型，否则 mock；mock=离线规则决策器；real=强模型",
+    )
     parser.add_argument("--docs-dir", action="append", default=None, help="文档目录，可重复；后出现的按 doc_id 覆盖前面的")
     parser.add_argument("--corpus", default=None, help="语料子集：名字（full/conflict_min/no_claim）或 JSON 路径")
     parser.add_argument("--fault", action="append", default=None, help="故障注入 tool:error_code[:n]，可重复")
@@ -38,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session-file", default=None, help="多轮会话：读入/写回历史（JSON 数组）")
     parser.add_argument("--json", action="store_true", help="只输出 JSON")
     parser.add_argument("--pretty", action="store_true", help="JSON 缩进输出")
+    parser.add_argument("--with-trace", action="store_true", help="在 JSON 里附带每一步的决策轨迹")
     return parser
 
 
@@ -117,8 +124,12 @@ def main(argv: list[str] | None = None) -> int:
     store = DocStore(docs_dirs=[str(Path(d).resolve()) for d in docs_dirs], corpus=corpus)
     tools = Tools(store=store, faults=faults)
     trace = StepTrace(trace_path) if trace_path else None
+    model_kind = resolve_model_kind(args.model)
+    if args.model == "auto":
+        detail = "检测到 MODEL_API_KEY" if model_kind == "real" else "未配置 MODEL_API_KEY"
+        print(f"[model] auto → {model_kind}（{detail}）", file=sys.stderr)
     agent = Agent(
-        model=build_model(args.model),
+        model=build_model(model_kind),
         tools=tools,
         max_steps=args.max_steps,
         max_tool_calls=args.max_tool_calls,
@@ -126,6 +137,8 @@ def main(argv: list[str] | None = None) -> int:
         history=history,
     )
     result = agent.run(question)
+    if args.with_trace:
+        result["trace_steps"] = agent.trace_steps()
 
     if args.session_file:
         history = history + [

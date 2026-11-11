@@ -157,6 +157,24 @@ class Agent:
 
     # ---------------------------------------------------------------- 终审
 
+    def trace_steps(self, limit: int = 20) -> list[dict]:
+        """给 CLI / 页面用的精简决策轨迹：证明每一步是模型选的，而不是预设流程。"""
+        steps: list[dict] = []
+        for record in getattr(self.trace, "records", []):
+            if record.get("type") != "step":
+                continue
+            steps.append(
+                {
+                    "step": record.get("step"),
+                    "action": record.get("action"),
+                    "args": record.get("args"),
+                    "rationale": record.get("rationale"),
+                    "observation_summary": record.get("observation_summary"),
+                    "next_action": record.get("next_action"),
+                }
+            )
+        return steps[:limit]
+
     @staticmethod
     def _latest_hint(observations: list[dict]) -> dict | None:
         """最近一次检索给出的冲突线索（没有就返回 None）。"""

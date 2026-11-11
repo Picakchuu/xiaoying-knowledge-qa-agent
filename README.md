@@ -56,6 +56,26 @@ scripts/      make_examples.py（批量生成 examples）
 | AI 用在哪、改了什么 | [docs/04-ai-usage.md](docs/04-ai-usage.md) |
 | 最难的问题与下一步 | [docs/05-retrospective.md](docs/05-retrospective.md) |
 
+## 谁在决策（这是本项目最该看的一张表）
+
+| 决策 | 谁做 | 证据在哪 |
+|---|---|---|
+| 检索什么词、`top_k` 多少、要不要按 `doc_type` 收窄 | **模型** | trace 的 `args.query` / `args.top_k` |
+| 读哪个片段、要不要再读一份 | **模型** | trace 的 `read_chunk` 参数来自模型输出 |
+| 要不要查版本（`list_versions`） | **模型** | 真模型记录里它自己发起的 |
+| 继续取证 / 追问 / 作答 / 收尾 | **模型** | trace 的 `next_action` |
+| 回答正文怎么写、引用哪几条 | **模型** | `answer` 的 `answer_text` 与 `citations` |
+| 动作是否合法、参数类型 | 代码 | `actions.py` |
+| 引用是否逐字命中原文 | 代码 | `validator.py`（`citation_not_found`） |
+| 回答里的数字是否有出处 | 代码 | `validator.py`（`missing_number_grounding`） |
+| 是否在偷偷挑一个冲突值 | 代码 | `validator.py`（`unhandled_conflict` / `cherry_picked_conflict`） |
+| 步数/调用上限、最终状态 | 代码 | `agent.py` |
+
+一句话：**「想做什么」由模型决定，「能不能算数」由代码决定。**
+
+`--model auto`（默认）= 有 `MODEL_API_KEY` 就用真实模型，没有才退回 mock，并在 stderr 打印实际用了哪个。
+mock 是**测试替身**：它证明流程与控制正确，不证明模型判断质量——真实决策请看 `examples/case_a2*`。
+
 ## 两种运行模式（边界很重要）
 
 | 模式 | 需要什么 | 证明什么 |

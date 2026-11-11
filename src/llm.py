@@ -515,6 +515,15 @@ def load_dotenv(path: str | Path | None = None) -> None:
             os.environ[key] = value
 
 
+def resolve_model_kind(kind: str) -> str:
+    """把 auto 解析成真实可用的那一种：有 key 就用真模型，没有才退回 mock。"""
+    kind = (kind or "auto").lower()
+    if kind in {"mock", "real"}:
+        return kind
+    load_dotenv()
+    return "real" if os.environ.get("MODEL_API_KEY") else "mock"
+
+
 def build_model(kind: str) -> MockModel | OpenAICompatibleModel:
     kind = (kind or "mock").lower()
     if kind in {"mock", "offline"}:

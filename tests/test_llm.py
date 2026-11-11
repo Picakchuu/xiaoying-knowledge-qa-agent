@@ -4,7 +4,21 @@ from __future__ import annotations
 
 import pytest
 
-from src.llm import build_model, ping
+from src.llm import build_model, ping, resolve_model_kind
+
+
+def test_resolve_model_kind_prefers_real_when_key_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.llm.load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.setenv("MODEL_API_KEY", "sk-test")
+    assert resolve_model_kind("auto") == "real"
+    assert resolve_model_kind("mock") == "mock"
+    assert resolve_model_kind("real") == "real"
+
+
+def test_resolve_model_kind_falls_back_to_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.llm.load_dotenv", lambda *args, **kwargs: None)
+    monkeypatch.setenv("MODEL_API_KEY", "")
+    assert resolve_model_kind("auto") == "mock"
 
 
 def test_build_model_mock_by_default() -> None:
