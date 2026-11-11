@@ -1,0 +1,21 @@
+{
+  "question": "报销需要交纸质发票吗？",
+  "status": "answered",
+  "answer": "根据检索到的制度原文：报销需提交发票原件或电子发票、行程单。旧版文件已废止，不作为现行依据。",
+  "citations": [
+    {
+      "doc_id": "D01",
+      "chunk_id": "D01#c3",
+      "quote": "报销需提交发票原件或电子发票、行程单；住宿费用另需提供酒店入住水单。"
+    }
+  ],
+  "gaps": [],
+  "steps": 4,
+  "tool_calls": 3,
+  "model": "mock",
+  "reason": "引用逐字可核、数值均有出处，校验通过",
+  "duration_ms": 2,
+  "trace_path": "D:\\project\\xiaoying-knowledge-qa-agent\\examples\\case_a7_deprecated\\trace.jsonl",
+  "expect": "answered，不把已废止的 D08 当现行",
+  "mode": "mock"
+}

@@ -1,0 +1,21 @@
+{
+  "question": "年假可以攒到明年吗？",
+  "status": "answered",
+  "answer": "根据检索到的制度原文：当年未休完的年假不得结转至次年。",
+  "citations": [
+    {
+      "doc_id": "D03",
+      "chunk_id": "D03#c2",
+      "quote": "当年未休完的年假不得结转至次年；未休年假由公司按日工资的 200% 支付补偿。"
+    }
+  ],
+  "gaps": [],
+  "steps": 4,
+  "tool_calls": 3,
+  "model": "mock",
+  "reason": "引用逐字可核、数值均有出处，校验通过",
+  "duration_ms": 3,
+  "trace_path": "D:\\project\\xiaoying-knowledge-qa-agent\\examples\\case_a1_answered\\trace.jsonl",
+  "expect": "answered，引用 D03#c2",
+  "mode": "mock"
+}

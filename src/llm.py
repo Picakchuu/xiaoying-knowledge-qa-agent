@@ -16,6 +16,8 @@ import re
 import time
 from pathlib import Path
 
+import requests
+
 from .normalize import bigrams, extract_facts
 from .synonyms import EXPANSIONS, expand_query
 
@@ -34,6 +36,9 @@ SYSTEM_PROMPT = """你是企业知识问答 Agent。你只能依据检索到的�
 - 引用必须逐字摘自 read_chunk 得到的 text，不得改写、不得拼接、不得凭记忆生成；每个 quote 必须能在原文中直接检索到。
 - 回答中出现的每个数字、期限、金额都必须出现在某条引用的原文里；不能把别的文档里的数字写进答案。
 - 若两份及以上来源对同一事项给出不同值：先查证（读全文找适用范围、版本关系、是否已废止），能判别就给条件化答案并同时引用；不能判别就 ask_user 列出冲突原文并请求确认，状态为 conflict_pending。禁止默认"新版本优先"，禁止折中取值，禁止只引其中一条。
+- ask_user 的提问必须把冲突双方的关键数值与版本日期直接写出来（例如"甲文件写 X，乙文件写 Y"），不能只说"存在冲突"让用户自己猜。
+- 检索结果可能涉及多份相近文档（同名细则的不同版本、带范围限定的专用版等）。下结论前要逐份确认各自的适用范围与状态，不要只看其中一份。
+- chunk_id 必须来自检索结果；传错会返回 not_found，请改用真实 id 重读，不要凭空猜编号。
 - 检索不到支撑材料时必须给出 insufficient 并说明缺什么，不得编造。
 - 被引用校验器驳回时，按驳回原因修改（改引用、改答案或转 ask_user）。
 - 如果检索结果的 note 提示已过滤已废止文档，而你怀疑旧版可能相关，用 list_versions 查证版本状态后再下结论。
@@ -370,8 +375,20 @@ class MockModel:
 # ---------------------------------------------------------------- 真实模型
 
 
-class OpenAIModel:
-    """OpenAI 兼容端点（默认 DeepSeek）。只做一件事：把状态发过去，拿回动作 JSON。"""
+class _HTTPError(Exception):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+class OpenAICompatibleModel:
+    """OpenAI 兼容端点（默认 DeepSeek）。只做一件事：把状态发过去，拿回动作 JSON。
+
+    为什么不用 openai SDK：本机 openai 1.40 与 httpx 0.28 不兼容（httpx 0.28 移除了 `proxies` 参数），
+    且当前环境没能在离线条件下升级依赖。直接用 requests 打 /chat/completions，少一层依赖、
+    少一类版本冲突，对「任何 OpenAI 兼容端点」都成立。
+    """
 
     def __init__(
         self,
@@ -380,72 +397,104 @@ class OpenAIModel:
         model_name: str = "deepseek-chat",
         temperature: float = 0.1,
         timeout: float = 60.0,
+        max_tokens: int = 6000,
     ) -> None:
-        try:
-            from openai import OpenAI
-        except ImportError as exc:  # pragma: no cover - 只有真模型模式需要
-            raise DecisionError("未安装 openai 包，请执行 pip install -r requirements.txt") from exc
         if not api_key:
             raise DecisionError("缺少 MODEL_API_KEY（可写在 .env 里，mock 模式不需要）")
+        self.base_url = (base_url or "https://api.deepseek.com").rstrip("/")
+        self.api_key = api_key
         self.model_name = model_name
         self.name = f"openai-compatible:{model_name}"
         self.temperature = temperature
-        self.client = OpenAI(base_url=base_url or None, api_key=api_key, timeout=timeout)
+        self.timeout = timeout
+        # 推理型模型会把 max_tokens 先花在 reasoning_tokens 上，
+        # 预算给小了就会出现「content 为空」——这是实测踩到的坑。
+        self.max_tokens = max_tokens
         self.last_usage: dict | None = None
         self.last_json_mode: bool | None = None
 
-    def _create(self, messages: list[dict], max_tokens: int = 1200):
+    @property
+    def endpoint(self) -> str:
+        return f"{self.base_url}/chat/completions"
+
+    def _post(self, payload: dict) -> dict:
+        try:
+            response = requests.post(
+                self.endpoint,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise DecisionError(f"网络请求失败：{exc.__class__.__name__}: {exc}") from exc
+        if response.status_code >= 400:
+            raise _HTTPError(response.status_code, (response.text or "")[:400])
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise DecisionError("模型接口返回的不是 JSON") from exc
+
+    def _create(self, messages: list[dict], max_tokens: int | None = None) -> dict:
         """优先用 JSON 模式；服务端不支持时自动降级为纯提示词约束。
 
         不同厂商/新模型对 response_format 的支持不一致，硬依赖它会让"换模型"变成改代码。
         """
-        kwargs = {
+        payload = {
             "model": self.model_name,
             "messages": messages,
             "temperature": self.temperature,
-            "max_tokens": max_tokens,
+            "max_tokens": max_tokens or self.max_tokens,
+            "response_format": {"type": "json_object"},
         }
         try:
-            response = self.client.chat.completions.create(
-                response_format={"type": "json_object"}, **kwargs
-            )
+            data = self._post(payload)
             self.last_json_mode = True
-            return response
-        except Exception as exc:  # noqa: BLE001 - 需要按错误类型决定是否降级
-            message = str(exc).lower()
-            unsupported = any(
-                token in message for token in ("response_format", "json_object", "unsupported", "not supported")
+            return data
+        except _HTTPError as exc:
+            hint = f"{exc.status} {exc.message}".lower()
+            unsupported = (
+                "response_format" in hint or "json_object" in hint or "unsupported" in hint or "not supported" in hint
             )
             if not unsupported:
-                raise DecisionError(f"模型调用失败：{exc.__class__.__name__}: {exc}") from exc
+                raise DecisionError(f"模型接口返回 {exc.status}：{exc.message}") from exc
+            payload.pop("response_format", None)
             try:
-                response = self.client.chat.completions.create(**kwargs)
-                self.last_json_mode = False
-                return response
-            except Exception as exc2:  # noqa: BLE001
-                raise DecisionError(
-                    f"模型调用失败（已降级为纯提示词 JSON 仍失败）：{exc2.__class__.__name__}: {exc2}"
-                ) from exc2
+                data = self._post(payload)
+            except _HTTPError as exc2:
+                raise DecisionError(f"模型接口返回 {exc2.status}：{exc2.message}") from exc2
+            self.last_json_mode = False
+            return data
 
     def decide(self, ctx: dict) -> dict:
+        data = self._create(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": render_state(ctx)},
+            ]
+        )
+        if isinstance(data.get("usage"), dict):
+            self.last_usage = data["usage"]
         try:
-            response = self._create(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": render_state(ctx)},
-                ]
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise DecisionError(f"响应结构不符合 OpenAI 兼容格式：{str(data)[:200]}") from exc
+        if not isinstance(content, str) or not content.strip():
+            reasoning = ((data.get("usage") or {}).get("completion_tokens_details") or {}).get("reasoning_tokens")
+            hint = f"（reasoning_tokens={reasoning}）" if reasoning else ""
+            raise DecisionError(
+                f"模型返回空内容{hint}：max_tokens 可能被思维链耗尽，调大 MODEL_MAX_TOKENS 再试"
             )
-        except DecisionError:
-            raise
-        except Exception as exc:  # 网络/配额/参数错误统一转成可回灌信息
-            raise DecisionError(f"模型调用失败：{exc.__class__.__name__}: {exc}") from exc
-        usage = getattr(response, "usage", None)
-        self.last_usage = usage.model_dump() if usage is not None and hasattr(usage, "model_dump") else None
-        content = response.choices[0].message.content or ""
         try:
             return json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise DecisionError(f"模型没有返回合法 JSON：{exc.msg}") from exc
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise DecisionError(f"模型没有返回合法 JSON：{exc}") from exc
+
+
+# 兼容旧名字（早期版本叫 OpenAIModel）
+OpenAIModel = OpenAICompatibleModel
 
 
 # ---------------------------------------------------------------- 装配
@@ -466,18 +515,19 @@ def load_dotenv(path: str | Path | None = None) -> None:
             os.environ[key] = value
 
 
-def build_model(kind: str) -> MockModel | OpenAIModel:
+def build_model(kind: str) -> MockModel | OpenAICompatibleModel:
     kind = (kind or "mock").lower()
     if kind in {"mock", "offline"}:
         return MockModel()
     if kind in {"real", "openai"}:
         load_dotenv()
-        return OpenAIModel(
+        return OpenAICompatibleModel(
             base_url=os.environ.get("MODEL_BASE_URL") or None,
             api_key=os.environ.get("MODEL_API_KEY") or None,
             model_name=os.environ.get("MODEL_NAME", "deepseek-chat"),
             temperature=float(os.environ.get("MODEL_TEMPERATURE", "0.1")),
             timeout=float(os.environ.get("MODEL_TIMEOUT", "60")),
+            max_tokens=int(os.environ.get("MODEL_MAX_TOKENS", "6000")),
         )
     raise ValueError(f"未知模型类型：{kind}（可选 mock / real）")
 
@@ -497,22 +547,34 @@ def ping() -> dict:
         return {"ok": False, "stage": "config", "error": str(exc)}
     started = time.perf_counter()
     try:
-        response = model._create(  # noqa: SLF001 - 体检就是要打最底层的那一层
+        data = model._create(  # noqa: SLF001 - 体检就是要打最底层的那一层
             [{"role": "user", "content": '请只回复一个 JSON 对象：{"ok": true}'}],
-            max_tokens=32,
+            max_tokens=512,
         )
     except DecisionError as exc:
         return {"ok": False, "stage": "request", "model": model.model_name, "error": str(exc)}
     latency = int((time.perf_counter() - started) * 1000)
-    usage = getattr(response, "usage", None)
+    try:
+        content = data["choices"][0]["message"]["content"] or ""
+    except (KeyError, IndexError, TypeError):
+        return {
+            "ok": False,
+            "stage": "parse",
+            "model": model.model_name,
+            "error": f"响应结构异常：{str(data)[:200]}",
+        }
+    usage = data.get("usage")
+    reasoning = ((usage or {}).get("completion_tokens_details") or {}).get("reasoning_tokens")
     return {
         "ok": True,
         "stage": "done",
         "model": model.model_name,
         "json_mode": model.last_json_mode,
         "latency_ms": latency,
-        "content": (response.choices[0].message.content or "").strip()[:200],
-        "usage": usage.model_dump() if usage is not None and hasattr(usage, "model_dump") else None,
+        "content": content.strip()[:200] or "(空：token 预算可能被思维链耗尽)",
+        "reasoning_tokens": reasoning,
+        "max_tokens": model.max_tokens,
+        "usage": usage if isinstance(usage, dict) else None,
     }
 
 

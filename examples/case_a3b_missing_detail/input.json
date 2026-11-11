@@ -1,0 +1,15 @@
+{
+  "id": "case_a3b_missing_detail",
+  "question": "专业版一年多少钱？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "insufficient，资料缺口=具体价格"
+}

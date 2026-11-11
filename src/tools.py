@@ -356,6 +356,18 @@ class Tools:
         notes = [f"命中 {len(data)} 段"]
         if meta["filtered_deprecated"]:
             notes.append(f"已过滤 {meta['filtered_deprecated']} 段已废止文档")
+        seen_docs: list[str] = []
+        for chunk in chunks:
+            if chunk.doc_id not in seen_docs:
+                seen_docs.append(chunk.doc_id)
+        if len(seen_docs) >= 2:
+            # 把命中的文档清单（含标题）一并给出：标题里常有「总部专用版」这类范围信息，
+            # 模型看到才知道该去查适用范围，而不是只看最高分那一段。
+            labels = [
+                f"{chunk.doc_id}《{chunk.title}》" for chunk in chunks if chunk.doc_id in seen_docs[:5]
+            ]
+            unique_labels = list(dict.fromkeys(labels))
+            notes.append("涉及文档：" + "、".join(unique_labels))
         if data and scores[0] < LOW_RELEVANCE:
             notes.append(f"最高分 {scores[0]:.2f} 偏低，可能是无关命中，建议改写查询")
         if hint:

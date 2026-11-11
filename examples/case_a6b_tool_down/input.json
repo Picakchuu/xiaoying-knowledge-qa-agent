@@ -1,0 +1,17 @@
+{
+  "id": "case_a6b_tool_down",
+  "question": "报销期限多久？",
+  "history": [],
+  "corpus": "conflict_min",
+  "faults": [
+    "search_docs:timeout"
+  ],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "failed，不编答案"
+}

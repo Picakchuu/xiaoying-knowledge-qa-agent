@@ -1,0 +1,17 @@
+{
+  "question": "专业版一年多少钱？",
+  "status": "insufficient",
+  "answer": "检索到的文档只说明了报价方式，没有给出具体价格。",
+  "citations": [],
+  "gaps": [
+    "具体价格/报价单"
+  ],
+  "steps": 4,
+  "tool_calls": 3,
+  "model": "mock",
+  "reason": "模型主动以 insufficient 结束：检索到的文档只说明了报价方式，没有给出具体价格。",
+  "duration_ms": 2,
+  "trace_path": "D:\\project\\xiaoying-knowledge-qa-agent\\examples\\case_a3b_missing_detail\\trace.jsonl",
+  "expect": "insufficient，资料缺口=具体价格",
+  "mode": "mock"
+}

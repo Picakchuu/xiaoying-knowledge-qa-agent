@@ -1,0 +1,15 @@
+{
+  "id": "case_a7_deprecated",
+  "question": "报销需要交纸质发票吗？",
+  "history": [],
+  "corpus": "full",
+  "faults": [],
+  "docs_dir": [
+    "data\\docs"
+  ],
+  "limits": {
+    "max_steps": 12,
+    "max_tool_calls": 8
+  },
+  "expect": "answered，不把已废止的 D08 当现行"
+}
