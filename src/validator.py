@@ -163,12 +163,14 @@ def check_conflict_handling(answer_text: str, verified: list[tuple[Any, str]]) -
     return errors
 
 
-def check_hint_coverage(answer_text: str, hint: dict | None) -> list[dict]:
-    """检索线索说"这里有冲突"，但回答只提了一个值、又没说适用范围 -> 打回。
+def check_hint_coverage(answer_text: str, hint: dict | None, question: str = "") -> list[dict]:
+    """检索线索说"这里有冲突"，但回答只提了一个值、又不该被范围豁免 -> 打回。
 
     这条是给「弱模型悄悄挑一个答案」准备的：它的引用集合内部自洽（都写 15 天），
     `unhandled_conflict` 抓不到；但只要上一轮检索给过冲突线索，就说明库里还有另一个值。
-    为了不误杀合法的条件化回答，带适用范围词的回答直接放行。
+
+    豁免条件是**问题本身**给了范围（「我是总部员工…」），不是答案里提了一句「总部」——
+    实测弱模型会写"15 天，注意总部专用版仅适用总部"，用答案里的范围词豁免等于放行错误答案。
     """
     if not hint:
         return []
@@ -183,14 +185,14 @@ def check_hint_coverage(answer_text: str, hint: dict | None) -> list[dict]:
     mentioned = {f["value"] for f in related}
     if set(values) <= mentioned:
         return []
-    if any(marker in answer_text for marker in SCOPE_MARKERS):
-        return []
+    if any(marker in question for marker in SCOPE_MARKERS):
+        return []  # 提问者自己限定了适用范围，只需回答对应那一档
     missing = sorted(set(values) - mentioned)
     return [
         _err(
             "cherry_picked_conflict",
             f"检索线索显示 {unit}存在互斥取值 {values}，回答只出现 {sorted(mentioned)}，"
-            f"且未说明适用范围；必须并列说明冲突或转为请求确认",
+            f"而问题并未限定适用范围；必须并列说明冲突或转为请求确认",
             unit=unit,
             values=values,
             missing=missing,
@@ -204,6 +206,7 @@ def verify_answer(
     store: DocStore,
     require_conflict_disclosure: bool = True,
     hint: dict | None = None,
+    question: str = "",
 ) -> dict:
     """`answer` 动作的终审。ok=True 才允许以 answered 状态结束。"""
     errors: list[dict] = []
@@ -215,7 +218,7 @@ def verify_answer(
         errors.extend(check_numbers(answer_text, verified))
         if require_conflict_disclosure:
             errors.extend(check_conflict_handling(answer_text, verified))
-            errors.extend(check_hint_coverage(answer_text, hint))
+            errors.extend(check_hint_coverage(answer_text, hint, question))
     errors = _dedupe(errors)
     return {
         "ok": not errors,

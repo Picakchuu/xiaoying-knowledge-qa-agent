@@ -134,6 +134,17 @@ def test_docs_dir_override_changes_retrieval() -> None:
     assert obs["hints"]["conflict_hint"]["values"] == ["15", "45"]
 
 
+def test_conflict_scope_chunks_are_attached(store: DocStore) -> None:
+    """命中冲突线索时，检索结果直接附带各来源的适用范围片段（省掉模型的额外查证步）。"""
+    obs = Tools(store).search_docs("报销期限多久？")
+    scope = [row for row in obs["data"] if row.get("via") == "conflict_scope"]
+    scope_chunks = {row["chunk_id"] for row in scope}
+    # D01#c1 本身就在前 5 条命中里，所以只要求另外两篇的适用范围片段被补进来
+    assert {"D02#c1", "D02b#c1"} <= scope_chunks
+    assert "D01#c1" in {row["chunk_id"] for row in obs["data"]}
+    assert "已附上各冲突来源的适用范围片段" in obs["note"]
+
+
 def test_summarize_observation_is_one_line(store: DocStore) -> None:
     tools = Tools(store)
     ok = summarize_observation(tools.search_docs("报销期限多久？"))

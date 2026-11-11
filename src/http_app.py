@@ -1,4 +1,4 @@
-"""极简 HTTP 入口（只用标准库，零依赖）。
+﻿"""极简 HTTP 入口（只用标准库，零依赖）。
 
 POST /ask  {"question": "...", "history": [...]}
           -> {"status","answer","citations","gaps","steps","tool_calls",...}
@@ -254,12 +254,14 @@ class Server:
         corpus: str = "full",
         faults: list[str] | None = None,
         trace_dir: str | None = None,
+        max_seconds: float = 180.0,
     ) -> None:
         self.model_kind = model
         self.docs_dirs = docs_dirs or [DEFAULT_DOCS_DIR]
         self.corpus = corpus
         self.faults = faults or []
         self.trace_dir = trace_dir
+        self.max_seconds = max_seconds
         # 仅用于 /health 的元信息（模型名、片段数）
         self.preview = DocStore(docs_dirs=self.docs_dirs, corpus=corpus)
 
@@ -274,6 +276,7 @@ class Server:
             tools=Tools(store=store, faults=list(self.faults)),
             max_steps=DEFAULT_MAX_STEPS,
             max_tool_calls=DEFAULT_MAX_TOOL_CALLS,
+            max_seconds=self.max_seconds,
             trace=StepTrace(trace_path) if trace_path else StepTrace(None),
             history=history or [],
         )
@@ -359,7 +362,7 @@ class _Handler(BaseHTTPRequestHandler):
                     "corpus": app.corpus,
                     "chunks": len(app.preview.chunks),
                     "faults": list(app.faults),
-                    "limits": {"max_steps": DEFAULT_MAX_STEPS, "max_tool_calls": DEFAULT_MAX_TOOL_CALLS},
+                    "limits": {"max_steps": DEFAULT_MAX_STEPS, "max_tool_calls": DEFAULT_MAX_TOOL_CALLS, "max_seconds": app.max_seconds},
                 },
             )
             return
@@ -394,6 +397,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--docs-dir", action="append", default=None)
     parser.add_argument("--fault", action="append", default=None)
     parser.add_argument("--trace-dir", default=None, help="每个请求的 trace 落盘目录")
+    parser.add_argument("--max-seconds", type=float, default=180.0, help="单请求时间预算（秒），0=不限")
     args = parser.parse_args(argv)
 
     _Handler.app = Server(
@@ -402,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
         corpus=args.corpus,
         faults=args.fault,
         trace_dir=args.trace_dir,
+        max_seconds=args.max_seconds,
     )
     server = ThreadingHTTPServer(("127.0.0.1", args.port), _Handler)
     print(

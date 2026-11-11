@@ -376,7 +376,31 @@ class Tools:
                 + " / ".join(f"{c['doc_id']}={c['value']}{hint['unit']}" for c in hint["candidates"])
                 + "），是否属同一事项需自行核对"
             )
+            # 冲突来源各自的「适用范围/总则」片段直接附上：模型不必再为了查范围多发一次检索，
+            # 这一步把实测的 7 步压到 4~5 步（v4-pro 每步 30 秒，省一步就是半分钟）。
+            scope_rows = self._scope_chunks_for(hint, {row["chunk_id"] for row in data})
+            if scope_rows:
+                data.extend(scope_rows)
+                notes.append("已附上各冲突来源的适用范围片段（via=conflict_scope）")
         return obs_ok("search_docs", data, "；".join(notes), {"conflict_hint": hint} if hint else None)
+
+    def _scope_chunks_for(self, hint: dict, already: set[str]) -> list[dict]:
+        """为每个冲突来源找一段讲适用范围的原文（标题含适用/范围/总则，或正文写「仅适用」）。"""
+        rows: list[dict] = []
+        for candidate in hint.get("candidates") or []:
+            doc_chunks = [c for c in self.store.chunks.values() if c.doc_id == candidate["doc_id"]]
+            for chunk in doc_chunks:
+                if chunk.chunk_id in already:
+                    continue
+                is_scope = any(key in chunk.heading for key in ("适用", "范围", "总则")) or "仅适用" in chunk.text
+                if not is_scope:
+                    continue
+                row = chunk.as_dict(0.0)
+                row["via"] = "conflict_scope"
+                rows.append(row)
+                already.add(chunk.chunk_id)
+                break
+        return rows
 
     def read_chunk(self, doc_id: str, chunk_id: str) -> dict:
         doc_id = self._str_arg({"doc_id": doc_id}, "doc_id")

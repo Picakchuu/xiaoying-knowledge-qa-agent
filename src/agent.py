@@ -37,11 +37,13 @@ class Agent:
         max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
         trace: StepTrace | None = None,
         history: list[dict] | None = None,
+        max_seconds: float = 0.0,
     ) -> None:
         self.model = model
         self.tools = tools or Tools()
         self.max_steps = max(1, int(max_steps))
         self.max_tool_calls = max(1, int(max_tool_calls))
+        self.max_seconds = float(max_seconds or 0)
         self.trace = trace or NullTrace()
         self.history = history or []
 
@@ -68,6 +70,10 @@ class Agent:
         )
 
         for step in range(1, self.max_steps + 1):
+            # 时间预算：推理模型每步 20~60 秒，7 步就能拖到 4 分钟。超预算就不再等，
+            # 直接用已拿到的证据给结论（有冲突线索就请求确认，没有就说资料不足）。
+            if self.max_seconds and (time.perf_counter() - started) > self.max_seconds:
+                return self._budget_fallback(question, observations, step - 1, tool_calls, started)
             ctx = {
                 "question": question,
                 "history": self.history,
@@ -139,6 +145,7 @@ class Agent:
                     action["args"].get("citations"),
                     self.tools.store,
                     hint=self._latest_hint(observations),
+                    question=getattr(self, "_question", ""),
                 )
                 observation = (
                     obs_ok("citation_check", result, "引用校验通过", None)
@@ -237,6 +244,7 @@ class Agent:
                 args.get("citations"),
                 self.tools.store,
                 hint=self._latest_hint(observations),
+                question=getattr(self, "_question", ""),
             )
             if result["ok"]:
                 answer_text = args.get("answer_text", "")
@@ -321,6 +329,50 @@ class Agent:
         }
 
     # ---------------------------------------------------------------- 收尾
+
+    def _budget_fallback(self, question, observations, steps, tool_calls, started):
+        """时间预算用尽时的确定性收尾：基于已观察到的冲突线索请求确认，而不是空转。"""
+        hint = self._latest_hint(observations)
+        if hint:
+            citations: list[dict] = []
+            for candidate in hint.get("candidates") or []:
+                try:
+                    chunk = self.tools.store.get_chunk(candidate["doc_id"], candidate["chunk_id"])
+                except Exception:  # noqa: BLE001 - 拿不到就跳过，不阻断收尾
+                    continue
+                citations.append({"doc_id": chunk.doc_id, "chunk_id": chunk.chunk_id, "quote": chunk.text})
+            if len({c["doc_id"] for c in citations}) >= 2:
+                listed = " / ".join(
+                    f"{c['doc_id']}={c['value']}{hint['unit']}" for c in hint["candidates"]
+                )
+                answer = (
+                    f"检索到互斥来源（{listed}），因时间预算用尽未能完成查证，"
+                    "请确认适用哪份制度后再作答。"
+                )
+                return self._finish(
+                    question,
+                    "conflict_pending",
+                    answer,
+                    citations,
+                    ["适用制度范围（时间预算用尽，未完成查证）"],
+                    steps,
+                    tool_calls,
+                    started,
+                    "超出时间预算，基于冲突线索请求确认",
+                    observations,
+                )
+        return self._finish(
+            question,
+            "insufficient",
+            "时间预算用尽，未能完成查证，无法给出有依据的答案。",
+            [],
+            ["时间预算不足以完成查证（可用 --max-seconds 放宽）"],
+            steps,
+            tool_calls,
+            started,
+            "超出时间预算",
+            observations,
+        )
 
     def _finish(self, question, status, answer, citations, gaps, steps, tool_calls, started, reason, observations):
         payload = {

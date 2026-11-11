@@ -158,6 +158,50 @@ def test_gaps_backfilled_when_answer_admits_missing() -> None:
     assert agent._infer_gaps("随便问", "文档未提供相关信息", ["自定义缺口"]) == ["自定义缺口"]
 
 
+def test_time_budget_falls_back_to_conflict_pending(monkeypatch) -> None:
+    """推理模型每步 30 秒，7 步就是 4 分钟；超预算必须基于线索收尾，而不是干等。"""
+    import time as _time
+
+    class SlowSearch:
+        name = "slow-search"
+
+        def decide(self, ctx):  # noqa: ANN001 - 测试桩
+            _time.sleep(0.05)
+            return {"action": "search_docs", "args": {"query": "报销期限"}, "why": "慢模型"}
+
+    agent = Agent(
+        model=SlowSearch(),
+        tools=Tools(DocStore(corpus="conflict_min")),
+        max_steps=12,
+        max_tool_calls=8,
+        max_seconds=0.01,
+    )
+    result = agent.run("报销期限多久？")
+    assert result["status"] == "conflict_pending"
+    assert len({c["doc_id"] for c in result["citations"]}) >= 2
+    assert "时间预算" in result["reason"]
+
+
+def test_time_budget_without_evidence_is_insufficient() -> None:
+    import time as _time
+
+    class SlowSearch:
+        name = "slow-search"
+
+        def decide(self, ctx):  # noqa: ANN001
+            _time.sleep(0.05)
+            return {"action": "search_docs", "args": {"query": "公司明年会裁员吗"}, "why": "慢模型"}
+
+    agent = Agent(
+        model=SlowSearch(),
+        tools=Tools(DocStore(corpus="no_claim")),
+        max_seconds=0.01,
+    )
+    result = agent.run("公司明年会裁员吗？")
+    assert result["status"] == "insufficient"
+    assert result["citations"] == []
+
+
 def test_a7_deprecated_document_not_used_as_current() -> None:
     result = run_agent("报销需要交纸质发票吗？")
     assert result["status"] == "answered"
