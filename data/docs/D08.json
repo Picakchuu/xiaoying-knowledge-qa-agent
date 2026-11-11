@@ -1,0 +1,19 @@
+{
+  "doc_id": "D08",
+  "title": "旧版报销说明（已废止）",
+  "version_date": "2024-06-01",
+  "doc_type": "policy",
+  "status": "deprecated",
+  "chunks": [
+    {
+      "chunk_id": "D08#c1",
+      "heading": "一、报销时限",
+      "text": "费用发生后 60 天内提交报销申请。"
+    },
+    {
+      "chunk_id": "D08#c2",
+      "heading": "二、纸质流程",
+      "text": "报销需打印报销单并附纸质发票，交财务处窗口办理。"
+    }
+  ]
+}

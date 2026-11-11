@@ -1,0 +1,3 @@
+# 离线 mock 模式只需要 pytest；真实模型模式才需要 openai
+pytest>=8.0
+openai>=1.40

@@ -1,0 +1,29 @@
+{
+  "doc_id": "D04",
+  "title": "试用期管理说明",
+  "version_date": "2025-09-01",
+  "doc_type": "policy",
+  "status": "active",
+  "chunks": [
+    {
+      "chunk_id": "D04#c1",
+      "heading": "一、试用期时长",
+      "text": "新员工试用期为 3 个月；表现优异的可申请提前转正。"
+    },
+    {
+      "chunk_id": "D04#c2",
+      "heading": "二、试用期薪酬",
+      "text": "试用期工资为转正后工资的 80%。"
+    },
+    {
+      "chunk_id": "D04#c3",
+      "heading": "三、试用期休假",
+      "text": "试用期内员工不享受年假，确有需要可申请事假。"
+    },
+    {
+      "chunk_id": "D04#c4",
+      "heading": "四、转正评估",
+      "text": "转正需提交述职报告，并完成直属主管评估。"
+    }
+  ]
+}
