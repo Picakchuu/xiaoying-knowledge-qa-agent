@@ -7,7 +7,7 @@
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest                                   # 71 passed（代码级断言）
+python -m pytest                                   # 75 passed（代码级断言）
 python scripts/selfcheck.py                        # 12/12 验收行为自测（状态/引用/不变量）
 python -m src.cli --question "报销期限多久？" --corpus conflict_min
 ```
@@ -27,6 +27,7 @@ type examples\case_a2c_scoped_answered\output.md
 | 设计 | 一句话 |
 |---|---|
 | **模型只提议，代码终审** | 模型说 `answered` 不算数：quote 必须逐字命中原文、回答里每个数字都要有出处、引了两份互斥来源就必须并列说明，否则打回 |
+| **弱模型也会被纠偏** | 检索线索显示 15 天 vs 30 天时，回答只写一个值又不说适用范围 → `cherry_picked_conflict` 打回；实测同一个弱模型因此从"擅自答 15 天"变成"列三份原文并追问" |
 | **冲突不擅自裁决** | 两份来源冲突且无适用范围 → `ask_user` 列出双方原文与版本日期；能查到适用范围就条件化回答 |
 | **检索线索给模型看** | `search_docs` 会返回「涉及文档」清单与 `conflict_hint`（同单位不同数值），让模型知道"还有一份总部专用版" |
 | **观察 → 调整** | 工具失败/校验驳回都变成可回灌的 observation，模型下一步自己换 query、改引用或转追问 |
@@ -37,7 +38,7 @@ type examples\case_a2c_scoped_answered\output.md
 ```text
 src/          agent 主循环、动作 schema、工具、校验器、模型接入、CLI、HTTP
 data/         9 篇合成文档 + 3 套语料 + 3 个内容替换夹具
-tests/        71 条测试（检索/校验/主循环/上限/内容替换/HTTP/模型客户端）
+tests/        75 条测试（检索/校验/主循环/上限/内容替换/HTTP/模型客户端）
 examples/     15 组「输入 + 输出 + 逐步 trace」，含 3 条真实模型记录
 docs/         需求、方案、评测、AI 使用、复盘、原始方案
 scripts/      make_examples.py（批量生成 examples）

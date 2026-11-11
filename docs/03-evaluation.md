@@ -3,7 +3,7 @@
 ## 1. 怎么复核（三步）
 
 ```powershell
-python -m pytest                                  # 71 passed，原始输出见 examples/test-results.txt
+python -m pytest                                  # 75 passed，原始输出见 examples/test-results.txt
 python scripts/make_examples.py --mode mock       # 重跑 12 组离线用例（秒级）
 python -m src.cli --input examples/case_a2_conflict/input.json --model mock --json
 ```
@@ -85,6 +85,24 @@ step5 answer  ← 改成只保留有出处的表述 → answered，引用 D02b#c
 | 结果 | 追问 | 追问（引用更全） | 直接作答 |
 | 说明什么 | 模型会为了"能不能裁决"去反复取证 | 模型会读检索结果里的文档标题，去追"总部专用版" | 条件一旦成立，模型愿意下结论而不是永远追问 |
 
+### 3.5 强弱模型对照：一次真实的退化（也是护栏的由来）
+
+换了便宜的 `deepseek-chat` 重跑同样三条（用环境变量覆盖，不改 `.env`）：
+
+| 用例 | `deepseek-v4-pro`（强） | `deepseek-chat`（弱，加固前） | `deepseek-chat`（加固后） |
+|---|---|---|---|
+| A2 纯冲突 | conflict_pending，5 步 | conflict_pending，6 步 ✅ | 同左 |
+| A2b 含总部版 | conflict_pending，6 步 | **answered：说"两份细则一致 15 天"，把 D01 的 30 天丢掉了** ❌ | **conflict_pending，7 步，引用 5 条** ✅ |
+| A2c 给了范围 | answered，5 步 | answered，5 步 ✅ | 同左 |
+
+弱模型那次"挑自洽来源"的回答里，两份引用都写 15 天，`unhandled_conflict` 抓不到——
+这是校验器的语义盲区。于是补了第四级 `cherry_picked_conflict`：只要上一轮检索给过
+`conflict_hint`（库里确有 15 天 vs 30 天），而回答只出现其中一个值、又没写适用范围，就打回。
+加固后同一个弱模型在 A2b 上的输出变成"三份文件分别怎么写 + 请确认所属范围"，和强模型同档。
+
+结论：**这类任务里"弱模型 + 强护栏"比"只看模型名"更可靠**；延迟也从 2.5 分钟降到 20 秒量级。
+演示/自测建议用 `deepseek-chat`，把 `deepseek-v4-pro` 的记录保留为"强模型基线"。
+
 ## 4. 关键验收点实测
 
 | 验收点 | 证据 | 结论 |
@@ -106,7 +124,7 @@ step5 answer  ← 改成只保留有出处的表述 → answered，引用 D02b#c
 1. **真实模型不稳定**：同一问题多次跑，步数不同（曾出现 4/3 与 5/4 两种）。这是模型采样带来的正常差异，文档里给的是其中一次的记录。
 2. **推理预算会吃掉输出**：`deepseek-v4-pro` 会把 token 先花在 `reasoning_tokens` 上。第一次跑 A2b 时 `max_tokens=3000` 被思维链占满，模型返回空内容，白丢一步。已改为默认 6000 并在客户端明确报错。
 3. **模型会猜 chunk 编号**：一次 trace 里模型直接读 `D02#c0`（不存在），拿到 `not_found` 后自己改用真实 id。为减少这种情况，prompt 里已写明"chunk_id 必须来自检索结果"。
-4. **校验器只做字面核对**：如果模型只引用冲突来源中的一份，代码无法判断语义上"少了一个来源"。兜底手段是 `search_docs` 的 `conflict_hint` + 评测断言，不追求形式化完备。
+4. **校验器只做字面核对**：`cherry_picked_conflict` 能在"检索线索已暴露冲突"时拦住"悄悄挑一个"，但如果检索压根没召回另一份来源，代码仍然判断不了——这属于检索覆盖率问题，靠 `conflict_hint` + 评测断言兜底，不追求形式化完备。
 5. **Mock 不代表真实决策质量**：mock 是规则决策器，只验证流程与控制（上限、打回、状态判定）。真实质量看 §3 的三条记录。
 6. **2-gram 召回有天花板**：语料里没有的说法（例如"违约金"）召不回来，同义词表只有 12 条。
 7. **延迟偏高**：推理型模型单次作答 1~2.5 分钟（A2 实测 5 步 7055 tokens）。交互场景需要换非推理模型或加流式。
