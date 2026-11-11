@@ -1,4 +1,4 @@
-"""HTTP 薄封装的冒烟测试（不监听端口，直接测处理函数与页面）。"""
+﻿"""HTTP 薄封装的冒烟测试（不监听端口，直接测处理函数与页面）。"""
 
 from __future__ import annotations
 
@@ -21,8 +21,23 @@ def test_page_lists_acceptance_examples() -> None:
         assert marker in PAGE
 
 
+def test_page_shows_decision_steps_section() -> None:
+    assert "决策过程" in PAGE
+    assert "trace_steps" in PAGE
+
+
+def test_handle_ask_includes_trace_steps() -> None:
+    agent = build_agent(model="mock", corpus="conflict_min")
+    result = handle_ask({"question": "报销期限多久？"}, agent)
+    steps = result["trace_steps"]
+    assert len(steps) >= 3
+    assert steps[0]["action"] == "search_docs"
+    assert steps[0]["rationale"]
+    assert steps[-1]["action"] in {"ask_user", "answer", "finish"}
+
+
 def test_handle_ask_returns_full_payload() -> None:
-    agent = build_agent(corpus="conflict_min")
+    agent = build_agent(model="mock", corpus="conflict_min")
     result = handle_ask({"question": "报销期限多久？"}, agent)
     assert result["status"] == "conflict_pending"
     assert result["answer"]
@@ -31,14 +46,14 @@ def test_handle_ask_returns_full_payload() -> None:
 
 
 def test_handle_ask_rejects_empty_question() -> None:
-    agent = build_agent(corpus="conflict_min")
+    agent = build_agent(model="mock", corpus="conflict_min")
     result = handle_ask({}, agent)
     assert result["status"] == "failed"
     assert "question" in result["error"]
 
 
 def test_handle_ask_accepts_history() -> None:
-    agent = build_agent(corpus="full")
+    agent = build_agent(model="mock", corpus="full")
     history = [
         {
             "question": "年假可以攒到明年吗？",

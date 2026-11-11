@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .agent import DEFAULT_MAX_STEPS, DEFAULT_MAX_TOOL_CALLS, Agent
-from .llm import build_model
+from .llm import build_model, resolve_model_kind
 from .tools import DocStore, Tools
 from .trace import StepTrace
 
@@ -66,6 +66,9 @@ PAGE = """<!doctype html>
   .cite .meta { color:var(--muted); font-size:12px; }
   .cite .quote { color:#d7e2fb; font-size:14px; }
   .gaps li { color:var(--warn); }
+  .steps { padding-left:20px; margin:0; }
+  .steps li { margin:8px 0; }
+  .steps code { background:#1b2540; padding:1px 7px; border-radius:5px; color:#cfe0ff; }
   .meta { color:var(--muted); font-size:12.5px; margin-top:14px; }
   details { margin-top:14px; color:var(--muted); font-size:12.5px; }
   pre { background:#0b1120; border:1px solid var(--line); border-radius:10px;
@@ -91,13 +94,15 @@ PAGE = """<!doctype html>
   </div>
 
   <div id="out" class="panel">
-    <div><span id="badge" class="badge"></span></div>
+    <div><span id="badge" class="badge"></span> <span class="badge" id="modelbadge"></span></div>
     <h2>回答</h2>
     <div class="answer" id="answer"></div>
     <h2>引用（逐字原文）</h2>
     <div id="cites"></div>
     <h2>资料缺口</h2>
     <ul class="gaps" id="gaps"></ul>
+    <h2>决策过程（每一步都是模型选的，不是预设流程）</h2>
+    <ol class="steps" id="steps"></ol>
     <div class="meta" id="meta"></div>
     <details><summary>原始 JSON</summary><pre id="raw"></pre></details>
   </div>
@@ -177,6 +182,20 @@ function show(d) {
   if (!(d.gaps || []).length) { const li = document.createElement("li"); li.textContent = "无"; $("gaps").appendChild(li); }
   $("meta").textContent = "模型 " + d.model + " ｜ 步数 " + d.steps + " ｜ 工具调用 " +
     d.tool_calls + " ｜ 耗时 " + d.duration_ms + " ms ｜ 判定：" + (d.reason || "");
+  $("modelbadge").textContent = d.model || "";
+  const steps = d.trace_steps || [];
+  $("steps").innerHTML = "";
+  if (!steps.length) { $("steps").innerHTML = '<li class="meta">（无轨迹）</li>'; }
+  steps.forEach((s) => {
+    const li = document.createElement("li");
+    const args = s.args || {};
+    const detail = args.query ? "「" + args.query + "」" :
+                   (args.chunk_id ? args.chunk_id : (args.topic || ""));
+    li.innerHTML = "<code>" + s.action + "</code> " + detail +
+      '<div class="meta">理由：' + (s.rationale || "") + "</div>" +
+      '<div class="meta">看到：' + (s.observation_summary || "") + " → 下一步：" + (s.next_action || "结束") + "</div>";
+    $("steps").appendChild(li);
+  });
   $("raw").textContent = JSON.stringify(d, null, 2);
 }
 
@@ -190,7 +209,7 @@ renderChips();
 
 
 def build_agent(
-    model: str = "mock",
+    model: str = "auto",
     docs_dirs: list[str] | None = None,
     corpus: str = "full",
     faults: list[str] | None = None,
@@ -199,7 +218,7 @@ def build_agent(
 ) -> Agent:
     store = DocStore(docs_dirs=docs_dirs or [DEFAULT_DOCS_DIR], corpus=corpus)
     return Agent(
-        model=build_model(model),
+        model=build_model(resolve_model_kind(model)),
         tools=Tools(store=store, faults=faults),
         max_steps=DEFAULT_MAX_STEPS,
         max_tool_calls=DEFAULT_MAX_TOOL_CALLS,
@@ -213,7 +232,9 @@ def handle_ask(payload: dict, agent: Agent) -> dict:
     if not isinstance(question, str) or not question.strip():
         return {"status": "failed", "answer": "", "error": "缺少 question 字段"}
     agent.history = payload.get("history") or []
-    return agent.run(question.strip())
+    result = agent.run(question.strip())
+    result["trace_steps"] = agent.trace_steps(limit=12)
+    return result
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -271,7 +292,7 @@ class _Handler(BaseHTTPRequestHandler):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m src.http_app")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--model", default="mock", choices=["mock", "real"])
+    parser.add_argument("--model", default="auto", choices=["auto", "mock", "real"])
     parser.add_argument("--corpus", default="full")
     parser.add_argument("--docs-dir", action="append", default=None)
     parser.add_argument("--fault", action="append", default=None)
