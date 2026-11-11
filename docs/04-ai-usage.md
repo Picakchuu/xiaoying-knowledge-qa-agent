@@ -1,4 +1,4 @@
-# 04 · AI 使用记录与验证
+﻿# 04 · AI 使用记录与验证
 
 ## 1. 用在哪里
 
@@ -35,7 +35,7 @@
 
 ## 3. 怎么验证 AI 的产出
 
-1. **单元/端到端测试**：`pytest` → 101 passed, 6 skipped（HTTP 端到端在本机沙箱被跳过）（原始输出 `examples/test-results.txt`）；覆盖检索、校验、主循环、上限、内容替换、HTTP 封装、模型客户端（全打桩）。
+1. **单元/端到端测试**：`pytest` → 105 passed, 6 skipped（HTTP 端到端在本机沙箱被跳过）（原始输出 `examples/test-results.txt`）；覆盖检索、校验、主循环、上限、内容替换、HTTP 封装、模型客户端（全打桩）。
 2. **真实模型评测（可重复）**：`python scripts/real_eval.py` 用真模型跑 14 条验收用例并出报告（`examples/real-eval-deepseek-chat.md`）。最近一次 14/14 通过；正是这轮评测抓出了三个只有真模型才会触发的问题（缺口没回填、工具失败不熔断、JSON 尾部多余内容），见 `docs/03-evaluation.md` §5。
 3. **强模型逐条记录**：`examples/case_a2*` 三条 `deepseek-v4-pro` 的 trace。其中 a2c 有一次被校验器真实拦下（`missing_number_grounding`）后自我修正——最能说明"代码在兜底，不是模型说了算"。
 4. **内容替换**：把 D01 的 30 天改 45 天、D03 的"不得结转"改"可结转"，答案与冲突值随之改变（C1/C2）。

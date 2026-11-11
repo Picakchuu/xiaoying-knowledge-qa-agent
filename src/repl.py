@@ -49,6 +49,7 @@ class Session:
     show_trace: bool = False
     history: list[dict] = field(default_factory=list)
     trace_dir: str | None = None
+    max_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         self._reload()
@@ -83,6 +84,7 @@ class Session:
             tools=self.tools,
             max_steps=DEFAULT_MAX_STEPS,
             max_tool_calls=DEFAULT_MAX_TOOL_CALLS,
+            max_seconds=self.max_seconds,
             trace=trace,
             history=self.history,
         )
@@ -213,6 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--docs-dir", action="append", default=None)
     parser.add_argument("--trace-dir", default=None, help="每轮 trace 落盘目录")
     parser.add_argument("--show-trace", action="store_true", help="启动即展示决策过程")
+    parser.add_argument("--max-seconds", type=float, default=0.0, help="单轮时间预算（秒），0=不限")
     return parser
 
 
@@ -224,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         docs_dirs=args.docs_dir,
         show_trace=args.show_trace,
         trace_dir=args.trace_dir,
+        max_seconds=args.max_seconds,
     )
 
     def _lines():

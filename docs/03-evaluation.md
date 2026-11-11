@@ -1,9 +1,9 @@
-# 03 · 评测：预期、实际、失败与限制
+﻿# 03 · 评测：预期、实际、失败与限制
 
 ## 1. 怎么复核（三步）
 
 ```powershell
-python -m pytest                                  # 101 passed, 6 skipped，原始输出见 examples/test-results.txt
+python -m pytest                                  # 105 passed, 6 skipped，原始输出见 examples/test-results.txt
 python scripts/selfcheck.py                       # 12/12 验收行为（mock 决策器，秒级）
 MODEL_NAME=deepseek-chat python scripts/real_eval.py   # 真模型评测，报告见 examples/real-eval-deepseek-chat.md
 python -m src.cli --input examples/case_a2_conflict/input.json --model mock --json
@@ -125,26 +125,26 @@ step5 answer  ← 改成只保留有出处的表述 → answered，引用 D02b#c
 前面 §2 的矩阵是 **mock 决策器**跑出来的（证明流程与控制），下面这份是**真模型**跑的同一批用例：
 `MODEL_NAME=deepseek-chat python scripts/real_eval.py`，报告落盘 `examples/real-eval-deepseek-chat.md`。
 
-最近一次结果（2026-11-11，14 条，跳过 `b1_limit` 这类纯控制流用例）：
+最近一次结果（openai-compatible:deepseek-chat，14 条，跳过 `b1_limit` 这类纯控制流用例）：
 
 | 用例 | 期望 | 实际 | 步数 | 引用 | tokens | 耗时 |
 |---|---|---|---|---|---|---|
-| a1_answered | answered | answered | 2 | 1 | 1488 | 4.5s |
-| a2_conflict | conflict_pending | conflict_pending | 6 | 2 | 2284 | 16.4s |
-| a2b_scoped_conflict | conflict_pending | conflict_pending | 6 | 4 | 2488 | 15.7s |
-| a2c_scoped_answered | answered | answered | 8 | 2 | 2305 | 20.3s |
-| a3_out_of_scope | insufficient | insufficient | 5 | 0 | 1012 | 12.4s |
-| a3b_missing_detail | answered/insufficient | answered（带缺口） | 4 | 3 | 2544 | 11.2s |
-| a4a_paraphrase | answered | answered | 3 | 1 | 1613 | 8.4s |
-| a4c_query_rewrite | answered | answered | 5 | 1 | 2813 | 14.2s |
-| a5_followup | answered | answered | 3 | 1 | 1626 | 6.5s |
-| a6_tool_transient | conflict_pending | conflict_pending | 8 | 2 | 2346 | 27.6s |
-| a6b_tool_down | failed | failed | 3 | 0 | 927 | 7.2s |
-| a7_deprecated | answered | answered | 5 | 2 | 2267 | 15.2s |
-| c1_content_swap | conflict_pending | conflict_pending | 6 | 2 | 2298 | 22.9s |
-| c2_content_swap | answered | answered | 3 | 2 | 1693 | 8.8s |
+| a1_answered | answered | answered | 2 | 1 | 1486 | 5.3s |
+| a2_conflict | conflict_pending | conflict_pending | 6 | 2 | 2407 | 18.9s |
+| a2b_scoped_conflict | conflict_pending | conflict_pending | 10 | 5 | 3370 | 31.6s |
+| a2c_scoped_answered | answered | answered | 5 | 3 | 2808 | 17.7s |
+| a3_out_of_scope | insufficient | insufficient | 5 | 0 | 1014 | 14.5s |
+| a3b_missing_detail | insufficient | answered | 4 | 3 | 2526 | 13.0s |
+| a4a_paraphrase | answered | answered | 4 | 1 | 1831 | 11.4s |
+| a4c_query_rewrite | answered | answered | 5 | 1 | 3292 | 15.8s |
+| a5_followup | answered | answered | 3 | 1 | 1621 | 9.4s |
+| a6_tool_transient | conflict_pending | conflict_pending | 8 | 2 | 2442 | 20.9s |
+| a6b_tool_down | failed | failed | 4 | 0 | 1043 | 48.5s |
+| a7_deprecated | answered | answered | 5 | 2 | 2491 | 14.0s |
+| c1_content_swap | conflict_pending | conflict_pending | 6 | 2 | 2438 | 20.5s |
+| c2_content_swap | answered | answered | 5 | 1 | 1923 | 17.6s |
 
-**14/14 通过**，总 tokens 27704，总耗时 191 秒（单条 4.5–27.6 秒）。另有三条 `deepseek-v4-pro` 的记录在 `examples/case_a2*`（强模型基线，单条 33–146 秒）。
+**14/14 通过**，总 tokens 30692，总耗时 259 秒。另有 `deepseek-v4-pro` 的记录在 `examples/case_a2*`（强模型基线）。
 
 ### 真模型测试抓到的三个问题（都已修）
 
@@ -153,6 +153,7 @@ step5 answer  ← 改成只保留有出处的表述 → answered，引用 D02b#c
 | 1 | a3b 回答「文档未提供具体价格」但 `gaps` 为空 | 模型不填 `missing` | 代码兜底：回答含「未提供/未写明」且缺口为空 → 按问题类型回填（`_infer_gaps`） |
 | 2 | a6b 持续故障时模型一路重试到步数上限，返回 `incomplete` 而不是 `failed` | 没有任何熔断 | 同一工具连续失败 3 次 → 代码直接 `failed`，不再让模型空转 |
 | 3 | a4c / a7 间歇性 `failed`（`模型连续输出不可用`） | `deepseek-chat` 会在 JSON 后面再跟一段说明，严格 `json.loads` 整段直接报错 | 只取输出里第一个完整 JSON 对象（`parse_first_json`），并容忍代码围栏 |
+| 4 | a2b 里弱模型答「15 天，注意总部专用版仅适用总部」，只给了一个值 | `cherry_picked_conflict` 的豁免看的是**答案**里的范围词，被模型钻了空子 | 豁免改为看**问题**：只有提问者自己限定了范围（「我是总部员工…」）才允许单值回答 |
 
 这三条如果只跑 mock，永远发现不了——mock 是我写的规则，它不会"多说一句话"，也不会"一直重试到底"。
 
@@ -184,6 +185,18 @@ step5 answer  ← 改成只保留有出处的表述 → answered，引用 D02b#c
 
 **因此**：演示/自测建议 `deepseek-chat` 或 `--model mock`；`deepseek-v4-pro` 的记录保留为"强模型基线"。
 页面在等待超过 2 分钟时也会给出这条建议。
+
+### 已做的两项降延迟优化（实测有效）
+
+| 优化 | 做法 | 效果 |
+|---|---|---|
+| 检索直接附「适用范围」 | 命中冲突线索时，把各来源讲适用范围的片段一并返回（`via=conflict_scope`） | 同一题 `v4-pro` **7 步 / 249 秒 → 2 步 / 59 秒** |
+| 时间预算 `--max-seconds` | 超过预算不再继续取证，直接用已有的冲突线索请求确认（返回 `conflict_pending` + 引用），没有线索则 `insufficient` | 页面服务默认 180 秒封顶，不会无限转圈 |
+
+```powershell
+# 默认 180 秒封顶（HTTP 服务），CLI/REPL 可用 --max-seconds 自定义，0 = 不限
+python -m src.cli --question "报销期限多久？" --model real --max-seconds 120 --json
+```
 
 ## 6. 失败与已知限制（如实）
 

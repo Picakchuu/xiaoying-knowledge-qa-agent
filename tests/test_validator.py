@@ -181,6 +181,7 @@ def test_cherry_picked_conflict_is_rejected(store: DocStore) -> None:
         ],
         store,
         hint=HINT,
+        question="报销期限多久？",
     )
     assert result["ok"] is False
     codes = {error["code"] for error in result["errors"]}
@@ -189,13 +190,31 @@ def test_cherry_picked_conflict_is_rejected(store: DocStore) -> None:
 
 
 def test_scope_limited_answer_is_exempt(store: DocStore) -> None:
+    # 豁免看的是"问题给没给范围"：用户说自己是总部员工，回答只讲 15 天是合法的
     result = verify_answer(
         "总部员工按 15 天提交报销单。",
         [{"doc_id": "D02b", "chunk_id": "D02b#c2", "quote": "费用发生后 15 天内提交报销单，逾期提交需经财务经理批准。"}],
         store,
         hint=HINT,
+        question="我是总部员工，报销期限多久？",
     )
     assert result["ok"] is True, result["errors"]
+
+
+def test_scope_words_in_the_answer_do_not_exempt_it(store: DocStore) -> None:
+    """实测弱模型会写「15 天，注意总部专用版仅适用总部」——答案里提范围词不能当豁免。"""
+    result = verify_answer(
+        "费用发生后 15 天内提交报销单。需注意：总部专用版仅适用于总部员工。",
+        [
+            {"doc_id": "D02", "chunk_id": "D02#c2", "quote": D02_QUOTE},
+            {"doc_id": "D02b", "chunk_id": "D02b#c1", "quote": "本细则仅适用于总部（北京、上海办公区）员工；分支机构员工请参照所在区域的财务规定执行。"},
+        ],
+        store,
+        hint=HINT,
+        question="报销期限多久？",
+    )
+    assert result["ok"] is False
+    assert any(error["code"] == "cherry_picked_conflict" for error in result["errors"])
 
 
 def test_answer_listing_both_values_passes(store: DocStore) -> None:
@@ -208,6 +227,7 @@ def test_answer_listing_both_values_passes(store: DocStore) -> None:
         ],
         store,
         hint=HINT,
+        question="报销期限多久？",
     )
     assert result["ok"] is True, result["errors"]
 
@@ -219,5 +239,6 @@ def test_hint_of_other_unit_does_not_block_money_answer(store: DocStore) -> None
         [{"doc_id": "D02", "chunk_id": "D02#c4", "quote": "出差期间的市内交通费按实际发生额报销，单日合计不超过 200 元。"}],
         store,
         hint=HINT,
+        question="出差打车一天最多能报多少？",
     )
     assert result["ok"] is True, result["errors"]

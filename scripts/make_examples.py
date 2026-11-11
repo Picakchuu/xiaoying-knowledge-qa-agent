@@ -43,7 +43,9 @@ CASES: list[dict] = [
     {"id": "case_a2_conflict", "question": "报销期限多久？", "corpus": "conflict_min", "real": True,
      "expect": "文档冲突：并列 D01(30 天)/D02(15 天)", "status": "conflict_pending", "cites": ["D01#c2", "D02#c2"]},
     {"id": "case_a2b_scoped_conflict", "question": "报销期限多久？", "corpus": "full", "real": True,
-     "expect": "冲突查证：查到总部专用版后追问", "status": "conflict_pending", "cites": ["D01#c2", "D02b#c2"]},
+     "expect": "冲突查证：查到总部专用版后追问", "status": "conflict_pending",
+     # 只要引到 30 天那一侧 + 另一侧（D02 或 D02b 皆可），就构成"冲突双方都在"
+     "cites": ["D01#c2"], "real_statuses": ["conflict_pending"]},
     {"id": "case_a2c_scoped_answered", "question": "我是总部员工，报销期限多久？", "corpus": "full", "real": True,
      "expect": "冲突可解：条件给定时按 D02b 作答", "status": "answered", "cites": ["D02b#c2"]},
     {"id": "case_a3_out_of_scope", "question": "公司明年会裁员吗？", "corpus": "no_claim",

@@ -1,4 +1,4 @@
-"""CLI 入口：一条命令跑一个用例，输出 JSON + Markdown，trace 落盘。
+﻿"""CLI 入口：一条命令跑一个用例，输出 JSON + Markdown，trace 落盘。
 
 例子：
   python -m src.cli --question "报销期限多久？" --model mock --corpus conflict_min --json
@@ -41,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", default=None, help="输出目录：写 output.json / output.md / trace.jsonl")
     parser.add_argument("--max-steps", type=int, default=DEFAULT_MAX_STEPS)
     parser.add_argument("--max-tool-calls", type=int, default=DEFAULT_MAX_TOOL_CALLS)
+    parser.add_argument("--max-seconds", type=float, default=0.0, help="时间预算（秒），0=不限；超时基于已有证据收尾")
     parser.add_argument("--session-file", default=None, help="多轮会话：读入/写回历史（JSON 数组）")
     parser.add_argument("--json", action="store_true", help="只输出 JSON")
     parser.add_argument("--pretty", action="store_true", help="JSON 缩进输出")
@@ -133,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         tools=tools,
         max_steps=args.max_steps,
         max_tool_calls=args.max_tool_calls,
+        max_seconds=args.max_seconds,
         trace=trace,
         history=history,
     )

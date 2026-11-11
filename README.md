@@ -1,4 +1,4 @@
-# 企业知识问答 Agent（题目三）
+﻿# 企业知识问答 Agent（题目三）
 
 > 小影校招 AI Agent 开发岗 · 项目题 3
 > 给员工一个**可追溯到原文**的答案；查不到就说查不到；文档打架就说打架并请求确认。
@@ -26,7 +26,7 @@
 
 ```powershell
 pip install -r requirements.txt
-python -m pytest                                   # 101 passed, 6 skipped（HTTP 端到端在本机沙箱被跳过）（代码级断言）
+python -m pytest                                   # 105 passed, 6 skipped（HTTP 端到端在本机沙箱被跳过）（代码级断言）
 python scripts/selfcheck.py                        # 12/12 验收行为自测（状态/引用/不变量）
 python -m src.cli --question "报销期限多久？" --corpus conflict_min
 ```
