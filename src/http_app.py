@@ -81,7 +81,8 @@ PAGE = """<!doctype html>
   <h1>企业知识问答 Agent</h1>
   <div class="sub">
     依据文档原文作答，结论必须带引用；两份制度打架时会列出冲突并请你确认。
-    当前语料：<code id="corpus">__CORPUS__</code>（用 <code>--corpus conflict_min</code> 启动可看"纯冲突"路径）
+    当前语料：<code id="corpus">__CORPUS__</code>　当前模型：<code id="model">__MODEL__</code>
+    <span id="slowtip"></span>
   </div>
 
   <div class="panel">
@@ -121,7 +122,23 @@ const EXAMPLES = [
 ];
 
 const $ = (id) => document.getElementById(id);
+const SLOW = "__SLOW__" === "1";
 let currentHistory = [];
+let timer = null;
+
+function setHint(text) { $("hint").textContent = text; }
+function idleHint() {
+  setHint(SLOW ? "真实模型：单次约 20 秒 ~ 2 分钟，请耐心等" : "离线 mock 决策器，秒级返回");
+}
+function startWaiting() {
+  const t0 = Date.now();
+  clearInterval(timer);
+  timer = setInterval(() => {
+    const secs = ((Date.now() - t0) / 1000).toFixed(0);
+    setHint("思考中… 已等待 " + secs + " 秒" + (SLOW ? "（真实模型较慢，通常 20 秒~2 分钟）" : ""));
+  }, 250);
+}
+function stopWaiting() { clearInterval(timer); timer = null; idleHint(); }
 
 function renderChips() {
   EXAMPLES.forEach((item) => {
@@ -137,14 +154,18 @@ async function ask() {
   const question = $("q").value.trim();
   if (!question) return;
   $("go").disabled = true;
-  $("hint").textContent = "思考中…";
+  startWaiting();
   $("out").style.display = "none";
+  const controller = new AbortController();
+  const hardStop = setTimeout(() => controller.abort(), 300000);
   try {
     const res = await fetch("/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, history: currentHistory })
+      body: JSON.stringify({ question, history: currentHistory }),
+      signal: controller.signal
     });
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     show(data);
   } catch (err) {
@@ -154,10 +175,12 @@ async function ask() {
     $("answer").innerHTML = '<span class="err">请求失败：' + err + "</span>";
     $("cites").innerHTML = "";
     $("gaps").innerHTML = "";
+    $("steps").innerHTML = "";
     $("meta").textContent = "";
   } finally {
+    clearTimeout(hardStop);
+    stopWaiting();
     $("go").disabled = false;
-    $("hint").textContent = "离线 mock 决策器，秒级返回";
   }
 }
 
@@ -202,6 +225,8 @@ function show(d) {
 $("go").onclick = ask;
 $("q").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); });
 renderChips();
+idleHint();
+if (SLOW) { $("slowtip").textContent = "（真实模型较慢，页面会显示已等待秒数）"; }
 </script>
 </body>
 </html>
@@ -259,12 +284,32 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - 标准库约定
         if self.path in {"/", "/index.html"}:
-            corpus = getattr(getattr(self.agent, "tools", None), "store", None)
-            corpus_name = getattr(corpus, "corpus_name", None) or "full"
-            self._send_html(PAGE.replace("__CORPUS__", str(corpus_name)))
+            store = getattr(getattr(self.agent, "tools", None), "store", None)
+            corpus_name = getattr(store, "corpus_name", None) or "full"
+            model_name = getattr(getattr(self.agent, "model", None), "name", "unknown")
+            slow = "1" if "openai-compatible" in model_name else "0"
+            html = (
+                PAGE.replace("__CORPUS__", str(corpus_name))
+                .replace("__MODEL__", str(model_name))
+                .replace("__SLOW__", slow)
+            )
+            self._send_html(html)
             return
         if self.path == "/health":
-            self._send(200, {"ok": True, "service": "knowledge-qa", "endpoint": "POST /ask", "ui": "GET /"})
+            store = getattr(getattr(self.agent, "tools", None), "store", None)
+            self._send(
+                200,
+                {
+                    "ok": True,
+                    "service": "knowledge-qa",
+                    "endpoint": "POST /ask",
+                    "ui": "GET /",
+                    "model": getattr(getattr(self.agent, "model", None), "name", "unknown"),
+                    "corpus": getattr(store, "corpus_name", None) or "full",
+                    "chunks": len(getattr(store, "chunks", {}) or {}),
+                    "limits": {"max_steps": DEFAULT_MAX_STEPS, "max_tool_calls": DEFAULT_MAX_TOOL_CALLS},
+                },
+            )
             return
         self._send(404, {"ok": False, "error": "not found"})
 

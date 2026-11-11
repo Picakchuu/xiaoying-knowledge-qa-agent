@@ -129,9 +129,11 @@ python -m src.cli --question "年假可以攒到明年吗？" --max-steps 3 --ma
 python -m src.cli --input examples/case_a5_followup/input.json --json
 
 # HTTP 封装 + 浏览器演示页（零依赖，无需构建）
-python -m src.http_app --port 8000
-#   → 浏览器打开 http://127.0.0.1:8000 直接点示例提问
-#   → 或 curl 调 POST /ask：{"question": "报销期限多久？"}
+python -m src.http_app --port 8000 --model mock     # 秒级，演示/自测用这个
+python -m src.http_app --port 8000                  # 默认 auto→真实模型，每轮 20 秒~2 分钟
+#   → 浏览器打开 http://127.0.0.1:8000 直接点示例提问（看不到模型名就 Ctrl+F5 刷一下）
+#   → 页面顶部会显示当前模型与语料；真模型模式下会实时显示"已等待 N 秒"
+#   → GET /health 也会返回 model / corpus / chunks / limits，方便排查"为什么这么慢"
 
 # 重新生成全部 examples
 python scripts/make_examples.py --mode mock
