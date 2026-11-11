@@ -47,7 +47,7 @@ def test_quit_stops_the_loop() -> None:
     session = Session(model_kind="mock")
     out: list[str] = []
     run(session, iter(["/quit"]), out.append)
-    assert "再见" in out[-1]
+    assert "会话结束" in out[-1]
 
 
 def test_empty_lines_are_ignored() -> None:
