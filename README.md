@@ -72,6 +72,7 @@ scripts/      make_examples.py（批量生成 examples）
 | 预期 vs 实际、失败与限制 | [docs/03-evaluation.md](docs/03-evaluation.md) |
 | 测试原始输出 | [examples/test-results.txt](examples/test-results.txt) |
 | 真实模型三条路径 | [examples/case_a2_conflict](examples/case_a2_conflict)、[case_a2b_scoped_conflict](examples/case_a2b_scoped_conflict)、[case_a2c_scoped_answered](examples/case_a2c_scoped_answered) |
+| 全部 15 组用例索引 | [examples/README.md](examples/README.md) |
 | AI 用在哪、改了什么 | [docs/04-ai-usage.md](docs/04-ai-usage.md) |
 | 最难的问题与下一步 | [docs/05-retrospective.md](docs/05-retrospective.md) |
 

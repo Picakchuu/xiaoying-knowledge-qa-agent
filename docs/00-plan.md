@@ -1,4 +1,4 @@
-# 企业知识问答 Agent — 方案设计（v3）
+﻿# 企业知识问答 Agent — 方案设计（v3）
 
 > 考核题目：小影校招 AI Agent 开发岗 · 项目题 3「企业知识问答 Agent」
 > 本文件是**实现依据**（工作文档，已移入 `docs/00-plan.md`）。
@@ -321,7 +321,6 @@ python -m src.http_app --port 8000   # POST /ask {"question":"...","history":[]}
 | 目录 | 改动 | 期望 |
 |---|---|---|
 | `d01_45days/` | D01#c2「30 天」→「45 天」 | 冲突值变为 45 vs 15，答案必须跟着变 |
-| `d02b_scope_removed/` | D02b#c1 删掉「仅适用于总部」 | 失去判别依据 → 退化为 `conflict_pending` |
 | `d03_carryover_allowed/` | D03#c2「不得结转」→「可结转，最多 5 天」 | A1 答案反转 |
 
 每个目录只放**被改动的单篇 JSON**，靠 `--docs-dir` 叠加覆盖，避免整库复制。
@@ -363,62 +362,54 @@ python -m src.http_app --port 8000   # POST /ask {"question":"...","history":[]}
 
 ---
 
-## 7. 目录结构（v2 修正：补 `.gitignore`、`src/eval.py`、`src/http_app.py`、`src/normalize.py`、`data/regression/`、`examples/test-results.txt`）
+## 7. 目录结构（与仓库一致）
 
 ```
 xiaoying-knowledge-qa-agent/
-├── README.md                  # 首屏：3 步跑通 + 评审导航
-├── PLAN.md                    # 本文件（交付时移至 docs/00-plan.md）
-├── requirements.txt
-├── .env.example
-├── .gitignore
+├── README.md                  # 环境、安装、运行、评审导航
+├── requirements.txt           # requests + pytest
+├── pytest.ini                 # 关闭 cacheprovider（本机 Windows 权限问题）
+├── .env.example               # 模型配置模板（mock 模式无需配置）
+├── .gitignore / .gitattributes
 ├── src/
-│   ├── __init__.py
-│   ├── cli.py                 # CLI 入口
-│   ├── http_app.py            # 极简 HTTP（stdlib）
-│   ├── agent.py               # ReAct 主循环 + 上限 + 状态判定
+│   ├── cli.py                 # 单次调用入口
+│   ├── repl.py                # 交互会话入口（/model /corpus /trace …）
+│   ├── http_app.py            # 标准库 HTTP + 浏览器演示页
+│   ├── agent.py               # ReAct 主循环、终审、双上限、时间预算
 │   ├── actions.py             # 动作 schema + 参数校验
-│   ├── llm.py                 # real(OpenAI 兼容) / mock(规则决策器)
-│   ├── tools.py               # search_docs / read_chunk / list_versions + 故障注入
+│   ├── llm.py                 # OpenAI 兼容客户端 + Mock 决策器
+│   ├── tools.py               # search_docs / read_chunk / list_versions + 故障注入 + conflict_hint
 │   ├── normalize.py           # 归一化 / 中文数字 / n-gram / 数值事实
-│   ├── validator.py           # 两级校验 + 未处理冲突
-│   ├── trace.py               # JSONL trace
-│   └── eval.py                # 评测集跑分
-├── tests/
-│   ├── test_normalize.py
-│   ├── test_tools.py
-│   ├── test_validator.py
-│   ├── test_agent_flows.py    # mock 端到端
-│   ├── test_acceptance.py     # 对 §6 逐条断言
-│   ├── test_content_swap.py   # 内容替换回归
-│   └── test_http.py           # HTTP smoke
-├── scripts/make_examples.py   # 批量生成 examples（可复现）
+│   ├── validator.py           # 四级校验（quote / 数值 / 冲突 / 悄悄挑一个）
+│   ├── synonyms.py            # 检索同义词表
+│   └── trace.py               # JSONL trace
+├── tests/                     # 105 条（含真实 socket 的 HTTP 端到端、CLI、REPL）
+├── scripts/
+│   ├── make_examples.py       # 批量生成 examples
+│   ├── selfcheck.py           # 12 条验收行为自测（mock，秒级）
+│   └── real_eval.py           # 真模型评测（有 key 时）
 ├── data/
-│   ├── docs/D01..D08.json
+│   ├── docs/D01..D08.json     # 9 篇合成文档
 │   ├── corpora/{full,conflict_min,no_claim}.json
-│   ├── regression/{d01_45days,d02b_scope_removed,d03_carryover_allowed}/D0x.json
-│   └── eval_set.jsonl
+│   └── regression/{d01_45days,d03_carryover_allowed}/D0x.json
 ├── examples/
 │   ├── <case>/{input.json,output.json,output.md,trace.jsonl}
-│   └── test-results.txt
-└── docs/{01-requirements,02-solution,03-evaluation,04-ai-usage,05-retrospective}.md
+│   ├── test-results.txt       # pytest 原始输出
+│   └── real-eval-deepseek-chat.md / .json
+└── docs/{00-plan,01-requirements,02-solution,03-evaluation,04-ai-usage,05-retrospective}.md
 ```
 
 ---
 
-## 8. 测试计划
+## 8. 测试与验证
 
-| 层 | 文件 | 覆盖 |
+| 层 | 命令 | 覆盖 |
 |---|---|---|
-| 单元 | `test_normalize.py` | NFKC、全半角、中文数字、bigram、fact 抽取 |
-| 单元 | `test_tools.py` | 命中/空/废止过滤/非法参数/故障注入/conflict_hint |
-| 单元 | `test_validator.py` | 三类错误码 + 归一化边界（中文数字引用阿拉伯原文） |
-| 端到端(mock) | `test_agent_flows.py` | A1/A2/A2b/A3/A4/A5/A6/B1 全路径 |
-| 验收 | `test_acceptance.py` | §6 表逐条断言（材料文件存在性 + 内容断言） |
-| 回归 | `test_content_swap.py` | C1/C2：换内容 → 答案与动作改变 |
-| 冒烟 | `test_http.py` | POST /ask 返回结构正确 |
+| 单元/集成 | `python -m pytest` | 归一化、检索、校验器、主循环、上限与时间预算、内容替换、CLI、REPL、HTTP 处理函数与真实 socket、模型客户端解析 |
+| 验收行为 | `python scripts/selfcheck.py` | 12 组用例的状态/引用/缺口不变量（mock，秒级） |
+| 真模型 | `python scripts/real_eval.py` | 14 条验收用例，断言行为区间并出报告 |
 
-`pytest -v` 输出重定向到 `examples/test-results.txt`（考卷要求测试结果落在 examples/）。
+`pytest -v` 输出保存到 `examples/test-results.txt`；真模型报告在 `examples/real-eval-deepseek-chat.md`。
 
 ---
 
@@ -478,42 +469,7 @@ xiaoying-knowledge-qa-agent/
 
 ---
 
-## 13. 未决事项（需本人确认）
-
-1. **仓库地址**：`Pickachuu` 是 GitHub 用户名还是组织？仓库名建议 `xiaoying-knowledge-qa-agent`，公开还是私有（私有需给评审账号读权限）。
-2. **推送通道**：本机无 `gh`，`api.github.com` 直连被 TLS 掐断 → 需要 PAT + 代理，或由本人手动 push。
-3. **模型 Key**：推荐主模型 `deepseek-chat`；Key 放 `.env`（不入库），由本人填写。
-
----
-
-## v2 变更记录（相对 v1）
-
-| # | 改动 | 原因 |
-|---|---|---|
-| 1 | 五态统一，补 `incomplete` | v1 §2.4 与 §4.4 不一致 |
-| 2 | 新增 §4.6 Trace 协议（字段级） | 考卷要求「步骤/参数/返回摘要/后续动作/决策依据」，v1 未定义 |
-| 3 | 新增 §3.2 模型选型与 §3.3 运行方式 | 本人提问；同时避免用 reasoner 泄漏思维链 |
-| 4 | 新增 §4.10 CLI 接口面（`--docs-dir/--fault/--corpus/--trace-out`） | 无这些参数 examples 无法一键复现 |
-| 5 | 新增 §5.4 内容替换夹具 + C1/C2 用例 | 考卷审核要点「替换文档内容核对答案是否改变」v1 完全缺失 |
-| 6 | 新增 §5.2 语料子集（`conflict_min`） | 同一问题才能在「纯冲突」与「可解冲突」两条路径下都被验证 |
-| 7 | 修 §4.4 `history[-1]` bug | v1 只喂最后一条 observation，多轮会丢 |
-| 8 | 校验器新增 `unhandled_conflict` + 共用 normalizer | 防止「引用两份冲突来源却只答一个值」；避免检索与校验归一化不一致 |
-| 9 | `conflict_hint` 进 observation | 检索改进证据 + 代码层无法判语义冲突时的兜底线索 |
-| 10 | §6 矩阵补齐 A3b/A4a/A4b/A4c/A6b/A7/C1/C2 | v1 只有 6 条，未覆盖「版本意识」「瞬时 vs 持续失败」 |
-| 11 | §7 目录树修正 | 补 `.gitignore`、`src/eval.py`、`src/normalize.py`、`src/http_app.py`、`data/regression/`、`examples/test-results.txt` |
-| 12 | §10 计时表 | 考卷要求记录实际用时 |
-
----
-
-## 14. 新对话开场指令（v2）
-
-> 按 `D:\project\xiaoying-knowledge-qa-agent\PLAN.md`（v2）执行。当前进度：P1 进行中。
-> 先把 `data/docs/D01..D08.json`、`data/corpora/*.json`、`src/normalize.py`、`src/tools.py`、`src/validator.py`、对应 tests 写完并跑绿；再进 P2。
-> 硬约束：工具返回统一 observation 且内部吞异常；system prompt 不得出现任何具体数字样例；所有数值断言必须能被 quote 支持。
-
----
-
-## 15. 实现偏差记录（v3）
+## 13. 实现偏差记录（v3）
 
 实现过程中对方案做的必要修正，均已落进代码与 `docs/02/03`：
 
