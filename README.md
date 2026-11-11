@@ -3,6 +3,15 @@
 > 小影校招 AI Agent 开发岗 · 项目题 3
 > 给员工一个**可追溯到原文**的答案；查不到就说查不到；文档打架就说打架并请求确认。
 
+## 四个入口
+
+| 入口 | 命令 | 适合 |
+|---|---|---|
+| CLI（主入口） | `python -m src.cli --question "…"` | 脚本化、复现单条用例、写进评测 |
+| 交互会话 | `python -m src.repl` | 连续追问、现场演示、随时换语料/模型 |
+| HTTP | `python -m src.http_app --port 8000` | 当服务调用（`POST /ask`） |
+| 浏览器 | 打开 `http://127.0.0.1:8000` | 不写命令，点示例看状态/引用/决策过程 |
+
 ## 3 步跑通（无需 key）
 
 ```powershell
@@ -102,6 +111,11 @@ python -m src.cli --question "报销期限多久？" --model real --corpus full 
 ## 常用命令
 
 ```powershell
+# 交互式会话：进去之后连续聊天、追问（像 Claude Code 那样进入流程）
+python -m src.repl
+python -m src.repl --model real --corpus full --show-trace --trace-dir .tmp/traces
+#   /help /model real|mock /corpus <名字> /docs <目录> /trace on|off /reset /quit
+
 # 内容替换复核：D01 的 30 天改成 45 天，冲突值应随之改变
 python -m src.cli --question "报销期限多久？" --corpus conflict_min --docs-dir data/docs --docs-dir data/regression/d01_45days --json
 
