@@ -258,6 +258,9 @@ class Agent:
             "reason": reason,
             "duration_ms": elapsed_ms(started),
         }
+        usage = getattr(self.model, "last_usage", None)
+        if usage:
+            payload["usage"] = usage
         self.trace.decision(steps, "end", status, reason)
         self.trace.end(payload)
         payload["trace_path"] = str(self.trace.path) if getattr(self.trace, "path", None) else None

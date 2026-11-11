@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 from .normalize import bigrams, extract_facts
@@ -390,21 +391,56 @@ class OpenAIModel:
         self.name = f"openai-compatible:{model_name}"
         self.temperature = temperature
         self.client = OpenAI(base_url=base_url or None, api_key=api_key, timeout=timeout)
+        self.last_usage: dict | None = None
+        self.last_json_mode: bool | None = None
+
+    def _create(self, messages: list[dict], max_tokens: int = 1200):
+        """优先用 JSON 模式；服务端不支持时自动降级为纯提示词约束。
+
+        不同厂商/新模型对 response_format 的支持不一致，硬依赖它会让"换模型"变成改代码。
+        """
+        kwargs = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": max_tokens,
+        }
+        try:
+            response = self.client.chat.completions.create(
+                response_format={"type": "json_object"}, **kwargs
+            )
+            self.last_json_mode = True
+            return response
+        except Exception as exc:  # noqa: BLE001 - 需要按错误类型决定是否降级
+            message = str(exc).lower()
+            unsupported = any(
+                token in message for token in ("response_format", "json_object", "unsupported", "not supported")
+            )
+            if not unsupported:
+                raise DecisionError(f"模型调用失败：{exc.__class__.__name__}: {exc}") from exc
+            try:
+                response = self.client.chat.completions.create(**kwargs)
+                self.last_json_mode = False
+                return response
+            except Exception as exc2:  # noqa: BLE001
+                raise DecisionError(
+                    f"模型调用失败（已降级为纯提示词 JSON 仍失败）：{exc2.__class__.__name__}: {exc2}"
+                ) from exc2
 
     def decide(self, ctx: dict) -> dict:
         try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
+            response = self._create(
+                [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": render_state(ctx)},
-                ],
-                temperature=self.temperature,
-                response_format={"type": "json_object"},
-                max_tokens=1200,
+                ]
             )
+        except DecisionError:
+            raise
         except Exception as exc:  # 网络/配额/参数错误统一转成可回灌信息
             raise DecisionError(f"模型调用失败：{exc.__class__.__name__}: {exc}") from exc
+        usage = getattr(response, "usage", None)
+        self.last_usage = usage.model_dump() if usage is not None and hasattr(usage, "model_dump") else None
         content = response.choices[0].message.content or ""
         try:
             return json.loads(content)
@@ -444,3 +480,49 @@ def build_model(kind: str) -> MockModel | OpenAIModel:
             timeout=float(os.environ.get("MODEL_TIMEOUT", "60")),
         )
     raise ValueError(f"未知模型类型：{kind}（可选 mock / real）")
+
+
+# ---------------------------------------------------------------- 模型体检
+
+
+def ping() -> dict:
+    """一条最小请求，验证 key / base_url / 模型名 / JSON 模式是否真的可用。
+
+    换模型前先跑这个，比直接跑整条 agent 便宜得多，报错也更清楚。
+    """
+    load_dotenv()
+    try:
+        model = build_model("real")
+    except (DecisionError, ValueError) as exc:
+        return {"ok": False, "stage": "config", "error": str(exc)}
+    started = time.perf_counter()
+    try:
+        response = model._create(  # noqa: SLF001 - 体检就是要打最底层的那一层
+            [{"role": "user", "content": '请只回复一个 JSON 对象：{"ok": true}'}],
+            max_tokens=32,
+        )
+    except DecisionError as exc:
+        return {"ok": False, "stage": "request", "model": model.model_name, "error": str(exc)}
+    latency = int((time.perf_counter() - started) * 1000)
+    usage = getattr(response, "usage", None)
+    return {
+        "ok": True,
+        "stage": "done",
+        "model": model.model_name,
+        "json_mode": model.last_json_mode,
+        "latency_ms": latency,
+        "content": (response.choices[0].message.content or "").strip()[:200],
+        "usage": usage.model_dump() if usage is not None and hasattr(usage, "model_dump") else None,
+    }
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="python -m src.llm")
+    parser.add_argument("--ping", action="store_true", help="发一条最小请求，验证模型配置")
+    arguments = parser.parse_args()
+    if not arguments.ping:
+        parser.print_help()
+    else:
+        print(json.dumps(ping(), ensure_ascii=False, indent=2))
