@@ -136,7 +136,13 @@ function startWaiting() {
   clearInterval(timer);
   timer = setInterval(() => {
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
-    setHint("思考中… 已等待 " + secs + " 秒" + (SLOW ? "（真实模型较慢，通常 20 秒~2 分钟）" : ""));
+    let note = "";
+    if (SLOW && Number(secs) > 120) {
+      note = "（已超过 2 分钟：推理模型每步要思考 20~60 秒；演示建议换 deepseek-chat 或 --model mock）";
+    } else if (SLOW) {
+      note = "（真实模型较慢，通常 20 秒~2 分钟）";
+    }
+    setHint("思考中… 已等待 " + secs + " 秒" + note);
   }, 250);
 }
 function stopWaiting() { clearInterval(timer); timer = null; idleHint(); }
