@@ -32,6 +32,10 @@ class StepTrace:
     # -- 生命周期 -----------------------------------------------------
 
     def start(self, meta: dict) -> None:
+        # 同一进程可能跑多次（HTTP 服务、REPL），每次开跑都要清空上一轮的记录，
+        # 否则页面上会把历史步骤当成这一轮的决策过程展示。
+        self.records.clear()
+        self._pending = None
         self._emit({"type": "run_start", "ts": _now(), **meta})
 
     def choose(self, step: int, action: str, args: dict, why: str) -> None:

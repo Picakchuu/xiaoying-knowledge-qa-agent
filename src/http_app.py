@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -233,6 +234,48 @@ if (SLOW) { $("slowtip").textContent = "（真实模型较慢，页面会显示�
 """
 
 
+class Server:
+    """HTTP 服务的配置持有者：每个请求都新建 Agent，避免状态跨请求串味。
+
+    ThreadingHTTPServer 会并发处理请求，共享一个 Agent 实例既会把 trace 串起来，
+    也会让 history / 故障计数器互相污染，所以按请求装配。
+    """
+
+    def __init__(
+        self,
+        model: str = "auto",
+        docs_dirs: list[str] | None = None,
+        corpus: str = "full",
+        faults: list[str] | None = None,
+        trace_dir: str | None = None,
+    ) -> None:
+        self.model_kind = model
+        self.docs_dirs = docs_dirs or [DEFAULT_DOCS_DIR]
+        self.corpus = corpus
+        self.faults = faults or []
+        self.trace_dir = trace_dir
+        # 仅用于 /health 的元信息（模型名、片段数）
+        self.preview = DocStore(docs_dirs=self.docs_dirs, corpus=corpus)
+
+    def new_agent(self, history: list[dict] | None = None) -> Agent:
+        store = DocStore(docs_dirs=self.docs_dirs, corpus=self.corpus)
+        trace_path = None
+        if self.trace_dir:
+            stamp = __import__("time").strftime("%Y%m%d-%H%M%S-%f")
+            trace_path = str(Path(self.trace_dir) / f"http-{stamp}.jsonl")
+        return Agent(
+            model=build_model(resolve_model_kind(self.model_kind)),
+            tools=Tools(store=store, faults=list(self.faults)),
+            max_steps=DEFAULT_MAX_STEPS,
+            max_tool_calls=DEFAULT_MAX_TOOL_CALLS,
+            trace=StepTrace(trace_path) if trace_path else StepTrace(None),
+            history=history or [],
+        )
+
+    def model_name(self) -> str:
+        return f"openai-compatible:{os.environ.get('MODEL_NAME', 'deepseek-chat')}" if resolve_model_kind(self.model_kind) == "real" else "mock"
+
+
 def build_agent(
     model: str = "auto",
     docs_dirs: list[str] | None = None,
@@ -241,6 +284,7 @@ def build_agent(
     trace_out: str | None = None,
     history: list[dict] | None = None,
 ) -> Agent:
+    """单次装配（测试与脚本用）。服务端走 Server.new_agent，每请求一个实例。"""
     store = DocStore(docs_dirs=docs_dirs or [DEFAULT_DOCS_DIR], corpus=corpus)
     return Agent(
         model=build_model(resolve_model_kind(model)),
@@ -252,11 +296,13 @@ def build_agent(
     )
 
 
-def handle_ask(payload: dict, agent: Agent) -> dict:
+def handle_ask(payload: dict, agent_factory) -> dict:
     question = (payload or {}).get("question")
     if not isinstance(question, str) or not question.strip():
         return {"status": "failed", "answer": "", "error": "缺少 question 字段"}
-    agent.history = payload.get("history") or []
+    history = payload.get("history") or []
+    agent = agent_factory() if callable(agent_factory) else agent_factory
+    agent.history = history
     result = agent.run(question.strip())
     result["trace_steps"] = agent.trace_steps(limit=12)
     return result
@@ -264,7 +310,7 @@ def handle_ask(payload: dict, agent: Agent) -> dict:
 
 class _Handler(BaseHTTPRequestHandler):
     server_version = "knowledge-qa/0.1"
-    agent: Agent = None  # type: ignore[assignment]
+    app: "Server" = None  # type: ignore[assignment]
 
     def _send(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -284,19 +330,18 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - 标准库约定
         if self.path in {"/", "/index.html"}:
-            store = getattr(getattr(self.agent, "tools", None), "store", None)
-            corpus_name = getattr(store, "corpus_name", None) or "full"
-            model_name = getattr(getattr(self.agent, "model", None), "name", "unknown")
+            app = self.app
+            model_name = app.model_name()
             slow = "1" if "openai-compatible" in model_name else "0"
             html = (
-                PAGE.replace("__CORPUS__", str(corpus_name))
+                PAGE.replace("__CORPUS__", str(app.corpus))
                 .replace("__MODEL__", str(model_name))
                 .replace("__SLOW__", slow)
             )
             self._send_html(html)
             return
         if self.path == "/health":
-            store = getattr(getattr(self.agent, "tools", None), "store", None)
+            app = self.app
             self._send(
                 200,
                 {
@@ -304,9 +349,10 @@ class _Handler(BaseHTTPRequestHandler):
                     "service": "knowledge-qa",
                     "endpoint": "POST /ask",
                     "ui": "GET /",
-                    "model": getattr(getattr(self.agent, "model", None), "name", "unknown"),
-                    "corpus": getattr(store, "corpus_name", None) or "full",
-                    "chunks": len(getattr(store, "chunks", {}) or {}),
+                    "model": app.model_name(),
+                    "corpus": app.corpus,
+                    "chunks": len(app.preview.chunks),
+                    "faults": list(app.faults),
                     "limits": {"max_steps": DEFAULT_MAX_STEPS, "max_tool_calls": DEFAULT_MAX_TOOL_CALLS},
                 },
             )
@@ -324,7 +370,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False, "error": "body 必须是 JSON"})
             return
         try:
-            result = handle_ask(payload, self.agent)
+            result = handle_ask(payload, self.app.new_agent)
         except Exception as exc:  # pragma: no cover - 兜底
             self._send(500, {"ok": False, "error": f"{exc.__class__.__name__}: {exc}"})
             return
@@ -341,18 +387,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--corpus", default="full")
     parser.add_argument("--docs-dir", action="append", default=None)
     parser.add_argument("--fault", action="append", default=None)
-    parser.add_argument("--trace-out", default=None)
+    parser.add_argument("--trace-dir", default=None, help="每个请求的 trace 落盘目录")
     args = parser.parse_args(argv)
 
-    _Handler.agent = build_agent(
+    _Handler.app = Server(
         model=args.model,
         docs_dirs=args.docs_dir,
         corpus=args.corpus,
         faults=args.fault,
-        trace_out=args.trace_out,
+        trace_dir=args.trace_dir,
     )
     server = ThreadingHTTPServer(("127.0.0.1", args.port), _Handler)
-    print(f"listening on http://127.0.0.1:{args.port}  (POST /ask)", flush=True)
+    print(
+        f"listening on http://127.0.0.1:{args.port}  (POST /ask｜模型 {_Handler.app.model_name()}｜"
+        f"语料 {args.corpus})",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
