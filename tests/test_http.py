@@ -33,6 +33,13 @@ def test_page_shows_model_and_waiting_hint() -> None:
     assert "真实模型" in PAGE
 
 
+def test_page_explains_client_abort() -> None:
+    """浏览器 5 分钟超时中止时，要给出可操作的原因，而不是裸的 AbortError。"""
+    assert "超过 5 分钟" in PAGE
+    assert "服务端还是旧版本" in PAGE
+    assert "AbortError" in PAGE
+
+
 def test_handle_ask_includes_trace_steps() -> None:
     agent = build_agent(model="mock", corpus="conflict_min")
     result = handle_ask({"question": "报销期限多久？"}, agent)

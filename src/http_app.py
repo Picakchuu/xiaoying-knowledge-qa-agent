@@ -1,4 +1,4 @@
-﻿"""极简 HTTP 入口（只用标准库，零依赖）。
+"""极简 HTTP 入口（只用标准库，零依赖）。
 
 POST /ask  {"question": "...", "history": [...]}
           -> {"status","answer","citations","gaps","steps","tool_calls",...}
@@ -137,7 +137,9 @@ function startWaiting() {
   timer = setInterval(() => {
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
     let note = "";
-    if (SLOW && Number(secs) > 120) {
+    if (SLOW && Number(secs) > 180) {
+      note = "（超过 180 秒：服务端应当已封顶收尾；若一直不返回，说明服务端是旧版本，请重启服务）";
+    } else if (SLOW && Number(secs) > 120) {
       note = "（已超过 2 分钟：推理模型每步要思考 20~60 秒；演示建议换 deepseek-chat 或 --model mock）";
     } else if (SLOW) {
       note = "（真实模型较慢，通常 20 秒~2 分钟）";
@@ -179,7 +181,13 @@ async function ask() {
     $("out").style.display = "block";
     $("badge").className = "badge status-failed";
     $("badge").textContent = "failed";
-    $("answer").innerHTML = '<span class="err">请求失败：' + err + "</span>";
+    $("modelbadge").style.display = "none";
+    const aborted = err && err.name === "AbortError";
+    const message = aborted
+      ? "超过 5 分钟仍未返回，请求已中止。可能原因：① 服务端还是旧版本（没有 180 秒预算）——重启服务；"
+        + "② 模型太慢——改用 --model mock 或 MODEL_NAME=deepseek-chat。"
+      : "请求失败：" + err;
+    $("answer").innerHTML = '<span class="err">' + message + "</span>";
     $("cites").innerHTML = "";
     $("gaps").innerHTML = "";
     $("steps").innerHTML = "";
@@ -213,6 +221,7 @@ function show(d) {
   $("meta").textContent = "模型 " + d.model + " ｜ 步数 " + d.steps + " ｜ 工具调用 " +
     d.tool_calls + " ｜ 耗时 " + d.duration_ms + " ms ｜ 判定：" + (d.reason || "");
   $("modelbadge").textContent = d.model || "";
+  $("modelbadge").style.display = "";
   const steps = d.trace_steps || [];
   $("steps").innerHTML = "";
   if (!steps.length) { $("steps").innerHTML = '<li class="meta">（无轨迹）</li>'; }
